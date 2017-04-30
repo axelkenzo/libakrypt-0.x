@@ -108,6 +108,7 @@
   /* добавляем алгоритмы блочного шифрования */
   ak_oids_add_oid( ak_oid_new( block_cipher, algorithm, "magma", "1.2.643.2.2.21", NULL ));
   ak_oids_add_oid( ak_oid_new( block_cipher, algorithm, "kuznetchik", "1.2.643.7.1.1.5.1", NULL ));
+  ak_oids_add_oid( ak_oid_new( block_cipher, algorithm, "rc6", "1.2.643.5.5.1.1", NULL ));
 
   /* добавляем таблицы замен для алгоритма блочного шифрования ГОСТ 28147-89 (Магма) */
   ak_oids_add_oid( ak_oid_new( block_cipher, kbox_params,
