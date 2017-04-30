@@ -1,5 +1,5 @@
 /* ----------------------------------------------------------------------------------------------- */
-/*  Copyright (c) 2008 - 2017 by Mikahil Tsyganov, tsyganov.michail@yandex.ru                                     */
+/*  Copyright (c) 2008 - 2017 by Mikhail Tsyganov, tsyganov.michail@yandex.ru                                     */
 /*                                                                                                 */
 /*  Разрешается повторное распространение и использование как в виде исходного кода, так и         */
 /*  в двоичной форме, с изменениями или без, при соблюдении следующих условий:                     */
@@ -267,7 +267,7 @@ void ak_bckey_text_rc6(void)
 
     /* Создаем текстовый ключ */
     if ((bkey = ak_bckey_new_rc6_ptr(user_key, 32, ak_true))==NULL) {
-        ak_error_message( ak_error_get_value(), __func__, "wrong creation of test key" );
+        ak_error_message( ak_error_get_value(), __func__, "[TEST 1] wrong creation of test key" );
         return ak_false;
     }
 
@@ -308,7 +308,7 @@ void ak_bckey_text_rc6(void)
 
     /* Заново создаем текстовый ключ */
     if ((bkey = ak_bckey_new_rc6_ptr(user_key, 32, ak_true))==NULL) {
-        ak_error_message( ak_error_get_value(), __func__, "wrong creation of test key" );
+        ak_error_message( ak_error_get_value(), __func__, "[TEST 2] wrong creation of test key" );
         return ak_false;
     }
 
