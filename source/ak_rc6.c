@@ -34,14 +34,26 @@
 
 /* ----------------------------------------------------------------------------------------------- */
 
-#define RC6_ROUNDS  20              // Количество раундов
-#define KEY_LENGTH  256             // Длина ключа в битах
-#define W           32              // Длина машинного слова в битах
-#define P32         0xB7E15163      // "Магическая" константа на основе экспоненты
-#define Q32         0x9E3779B9      // "Магическая" константа на основе золотого сечения
-#define LG_W        5               // Значение двоичного логарифма от W (log2(32))
+#define RC6_ROUNDS  20              /* Количество раундов */
+#define KEY_LENGTH  256             /* Длина ключа в битах */
+#define W           32              /* Длина машинного слова в битах */
+#define P32         0xB7E15163      /* "Магическая" константа на основе экспоненты */
+#define Q32         0x9E3779B9      /* "Магическая" константа на основе золотого сечения */
+#define LG_W        5               /* Значение двоичного логарифма от W (log2(32)) */
 
 /* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция выполняет циклический сдвиг 32-битного числа влево. */
+uint32_t rol32(uint32_t a, uint8_t n)
+{
+    return (a << n) | (a >> (32 - n));
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция выполняет циклический сдвиг 32-битного числа вправо. */
+uint32_t ror32(uint32_t a, uint8_t n)
+{
+    return (a >> n) | (a << (32 - n));
+}
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция создает контекст ключа блочного алгоритма шифрования RC6
@@ -56,7 +68,7 @@
    @return Функция возвращает указатель на созданный контекст. В случае возникновения ошибки,
    возвращается NULL, код ошибки может быть получен с помощью вызова функции ak_error_get_value()  */
 /* ----------------------------------------------------------------------------------------------- */
-ak_bckey ak_bckey_rc6_new(void)
+static ak_bckey ak_bckey_rc6_new(void)
 {
     ak_bckey bkey = NULL;
 
@@ -73,8 +85,11 @@ ak_bckey ak_bckey_rc6_new(void)
         return ( bkey = ak_bckey_delete( bkey ));
     }
 
-    /* Устанавливаем данные ключа */
-    bkey->key.data =        NULL;
+    /* Выделяем память под раундовые ключи и очищаем её от мусора */
+    bkey->key.data =        (uint32_t*) calloc(2*ROUNDS+4, sizeof(uint32_t));
+    bkey->key.data =        {0};
+
+    /* Устанавливаем остальные данные ключа */
     bkey->key.set_mask =    ak_skey_set_mask_additive;
     bkey->key.remask =      ak_skey_remask_additive;
     bkey->key.set_icode =   ak_skey_set_icode_additive;
@@ -90,107 +105,128 @@ ak_bckey ak_bckey_rc6_new(void)
 }
 
 /* ----------------------------------------------------------------------------------------------- */
+/*! Функция создает контекст ключа алгоритма блочного шифрования RC6
+    и инициализирует его заданным значением.
 
-/*! Контекст RC6 */
-typedef struct
-{
-    uint8_t r;      // Число раундов, по умолчанию 20
-    uint32_t *S;    // 32-битные раундовые ключи
-} rc6_ctx_t;
+    Значение ключа инициализируется значением, содержащемся в области памяти, на которую
+    указывает аргумент функции. При инициализации ключевое значение \b копируется в буффер,
+    если флаг cflag истиннен. Если флаг ложен, то копирования не происходит.
+    Поведение функции при копировании аналогично поведению функции ak_buffer_set_ptr().
 
-rc6_ctx_t* ak_rc6_ctx_create_new()
+    После присвоения ключа производится его развёртка, маскирование и выработка контрольной суммы.
+
+    @param keyptr Указатель на область памяти, содержащую значение ключа.
+    @param size размер ключа в байтах.
+    @param cflag флаг владения данными. Если он истинен, то данные копируются в область памяти,
+    которой владеет ключевой контекст.
+
+    @return Функция возвращает указатель на созданный контекст. В случае возникновения ошибки,
+    возвращается NULL, код ошибки может быть получен с помощью вызова функции ak_error_get_value() */
+/* ----------------------------------------------------------------------------------------------- */
+ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const ak_bool cflag)
 {
-    rc6_ctx_t *new_ctx = malloc(sizeof(rc6_ctx_t));
-    new_ctx->S = (uint32_t*) calloc(2*ROUNDS+4, sizeof(uint32_t));
-    new_ctx->r = ROUNDS;
-    return new_ctx;
+    int error = ak_error_ok;
+    ak_bckey bkey = NULL;
+
+    /* Проверяем входной буфер */
+    if( keyptr == NULL ) {
+        ak_error_message( ak_error_null_pointer, __func__ , "using a null pointer to key data" );
+        return NULL;
+    }
+
+    /* Проверяем размер ключа */
+    if( size != 32 ) {
+        ak_error_message( ak_error_wrong_length, __func__, "using a wrong length of secret key" );
+        return NULL;
+    }
+
+    /* Создаем контекст ключа */
+    if(( bkey = ak_bckey_rc6_new( )) == NULL ) {
+        ak_error_message( ak_error_get_value(), __func__ , "incorrect creation of rc6 secret key" );
+        return NULL;
+    }
+
+    /* Присваиваем ключевой буфер */
+    if(( error = ak_skey_assign_ptr( &bkey->key, keyptr, size, cflag )) != ak_error_ok ) {
+        ak_error_message( error, __func__ , "incorrect assigning of key data" );
+        return ( bkey = ak_bckey_delete( bkey ));
+    }
+
+    return bkey;
 }
 
-void ak_rc6_ctx_free(rc6_ctx_t *ctx)
-{
-    free(ctx->S);
-    free(ctx);
-}
-
-/*! \brief Функция выполняет циклический сдвиг 32-битного числа влево. */
-uint32_t rol32(uint32_t a, uint8_t n)
-{
-    return (a << n) | (a >> (32 - n));
-}
-
-/*! \brief Функция выполняет циклический сдвиг 32-битного числа вправо. */
-uint32_t ror32(uint32_t a, uint8_t n)
-{
-    return (a >> n) | (a << (32 - n));
-}
-
+/* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет развертку ключа. */
-void ak_rc6_key_schedule(rc6_ctx_t *ctx, void *key)
+void ak_rc6_key_schedule(ak_skey ctx)
 {
-    ctx->S[0] = P32;
+    ctx->data[0] = P32;
     uint8_t i = 0, j = 0;
-    for(i = 1; i <= 2*ctx->r+3; ++i)
-        ctx->S[i] = ctx->S[i-1] + Q32;
+    for(i = 1; i <= 2*RC6_ROUNDS+3; ++i)
+        ctx->data[i] = ctx->data[i-1] + Q32;
 
     i = 0;
     uint32_t a = 0, b = 0;
-    for(uint8_t k=1; k<=3*(2*ctx->r+4); ++k)
+    for(uint8_t k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
     {
-        a = ctx->S[i] = rol32((ctx->S[i] + a + b), 3);
-        b = ((uint32_t*)key)[j] = rol32(((uint32_t*)key)[j] + a + b, a + b);
-        i = (i+1) % (2*ctx->r+4);
+        a = ctx->data[i] = rol32((ctx->data[i] + a + b), 3);
+        b = ((uint32_t*)ctx->key)[j] = rol32(((uint32_t*)ctx->key)[j] + a + b, a + b);
+        i = (i+1) % (2*RC6_ROUNDS+4);
         j = (j+1) % (KEY_LENGTH/W);
     }
 }
 
+/* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет удаление текущих раундовых ключей. */
-void ak_rc6_key_delete(rc6_ctx_t *ctx)
+void ak_rc6_key_delete(ak_skey ctx)
 {
-    free(ctx->S);
+    free(ctx->data);
 }
 
+/* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет зашифрование одного блока информации алгоритмом RC6. */
-void ak_rc6_encrypt(rc6_ctx_t *ctx, void* block)
+static void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
 {
-    register uint32_t A = ((uint32_t *)block)[0];
-    register uint32_t B = ((uint32_t *)block)[1];
-    register uint32_t C = ((uint32_t *)block)[2];
-    register uint32_t D = ((uint32_t *)block)[3];
+    register uint32_t A = ((uint32_t *)in)[0];
+    register uint32_t B = ((uint32_t *)in)[1];
+    register uint32_t C = ((uint32_t *)in)[2];
+    register uint32_t D = ((uint32_t *)in)[3];
 
-    B += ctx->S[0];
-    D += ctx->S[1];
+    B += ctx->data[0];
+    D += ctx->data[1];
     uint32_t t=0, u=0, temp_reg;
-    for(uint8_t i = 1; i <= ctx->r; ++i)
+    for(uint8_t i = 1; i <= RC6_ROUNDS; ++i)
     {
         t = rol32((B * (2 * B + 1)), LG_W);
         u = rol32((D * (2 * D + 1)), LG_W);
-        A = rol32(A ^ t, u) + ctx->S[2*i];
-        C = rol32(C ^ u, t) + ctx->S[2*i+1];
+        A = rol32(A ^ t, u) + ctx->data[2*i];
+        C = rol32(C ^ u, t) + ctx->data[2*i+1];
         temp_reg = A;
         A = B;
         B = C;
         C = D;
         D = temp_reg;
     }
-    A += ctx->S[2*ctx->r + 2];
-    C += ctx->S[2*ctx->r + 3];
-    ((uint32_t *)block)[0]=A;
-    ((uint32_t *)block)[1]=B;
-    ((uint32_t *)block)[2]=C;
-    ((uint32_t *)block)[3]=D;
+    A += ctx->data[2*RC6_ROUNDS + 2];
+    C += ctx->data[2*RC6_ROUNDS + 3];
+    ((uint32_t *)out)[0]=A;
+    ((uint32_t *)out)[1]=B;
+    ((uint32_t *)out)[2]=C;
+    ((uint32_t *)out)[3]=D;
 }
 
+/* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет расшифрование одного блока информации алгоритмом RC6. */
-void ak_rc6_decrypt(rc6_ctx_t *ctx, void *block)
+static void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
 {
-    register uint32_t A = ((uint32_t *)block)[0];
-    register uint32_t B = ((uint32_t *)block)[1];
-    register uint32_t C = ((uint32_t *)block)[2];
-    register uint32_t D = ((uint32_t *)block)[3];
-    C = C - ctx->S[2*ctx->r + 3];
-    A = A - ctx->S[2*ctx->r + 2];
+    register uint32_t A = ((uint32_t *)in)[0];
+    register uint32_t B = ((uint32_t *)in)[1];
+    register uint32_t C = ((uint32_t *)in)[2];
+    register uint32_t D = ((uint32_t *)in)[3];
+
+    C = C - ctx->data[2*RC6_ROUNDS + 3];
+    A = A - ctx->data[2*RC6_ROUNDS + 2];
     uint32_t t=0, u=0, temp_reg;
-    for(uint8_t i = ctx->r; i > 0; --i)
+    for(uint8_t i = RC6_ROUNDS; i > 0; --i)
     {
         temp_reg = D;
         D = C;
@@ -199,15 +235,111 @@ void ak_rc6_decrypt(rc6_ctx_t *ctx, void *block)
         A = temp_reg;
         t = rol32((B*(2*B+1)), LG_W);
         u = rol32((D*(2*D+1)), LG_W);
-        C = ror32((C-ctx->S[2*i+1]), t) ^ u;
-        A = ror32((A-ctx->S[2*i]), u) ^ t;
+        C = ror32((C-ctx->data[2*i+1]), t) ^ u;
+        A = ror32((A-ctx->data[2*i]), u) ^ t;
     }
-    D = D - ctx->S[1];
-    B = B - ctx->S[0];
-    ((uint32_t *)block)[0]=A;
-    ((uint32_t *)block)[1]=B;
-    ((uint32_t *)block)[2]=C;
-    ((uint32_t *)block)[3]=D;
+    D = D - ctx->data[1];
+    B = B - ctx->data[0];
+    ((uint32_t *)out)[0]=A;
+    ((uint32_t *)out)[1]=B;
+    ((uint32_t *)out)[2]=C;
+    ((uint32_t *)out)[3]=D;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция тестирования. */
+void ak_bckey_text_rc6(void)
+{
+    /* Проверка тестовых векторов для ключа 256 бит
+     * The RC6 (TM) Block Cipher
+     * Ronald L. Rivest, M.J.B. Robshaw, R. Sidney, and Y.L. Yin
+     * Страница 20 */
+
+    /* Тестовые векторы 1 (нулевые вектора) + шифртекст */
+    ak_uint8 user_key[32]       = {0};
+    ak_uint8 user_text[16]      = {0};
+    ak_uint8 cipher_text[16]    = {0x8f, 0x5f, 0xbd, 0x05, 0x10, 0xd1, 0x5f, 0xa8, 0x93, 0xfa, 0x3f, 0xda, 0x6e, 0x85, 0x7e, 0xc2};
+
+    /* Прочие данные для тестирования */
+    ak_uint8 out[16];
+    ak_bckey bkey = NULL;
+    int audit = ak_log_get_level();
+
+    /* Создаем текстовый ключ */
+    if ((bkey = ak_bckey_new_rc6_ptr(user_key, 32, ak_true))==NULL) {
+        ak_error_message( ak_error_get_value(), __func__, "wrong creation of test key" );
+        return ak_false;
+    }
+
+    /* Тестируем зашифрование одного блока информации */
+    bkey->encrypt(&bkey->key, user_text, out);
+    if (memcmp(out, cipher_text, 16) != 0) {
+        ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                           "[TEST 1] the one block encryption test from RC6 is wrong");
+        ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
+        ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text, 16, ak_true )); free( str );
+        bkey = ak_bckey_delete(bkey);
+        return ak_false;
+    }
+    if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                           "[TEST 1] the one block encryption test from RC6 is Ok" );
+
+    /* Тестируем расшифрование одного блока информации */
+    bkey->decrypt(&bkey->key, cipher_text, out);
+    if (memcmp(cipher_text, out, 16) != 0) {
+        ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                           "[TEST 1] the one block decryption test from RC6 is wrong");
+        ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text, 16, ak_true )); free( str );
+        ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
+        bkey = ak_bckey_delete(bkey);
+        return ak_false;
+    }
+    if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                            "[TEST 1] the one block decryption test from RC6 is Ok" );
+
+    bckey = ak_bckey_delete(bckey);
+
+    /* Тестовые векторы 2 + шифртекст */
+
+    user_key[32]    = {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
+                       0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe};
+    user_text[16]   = {0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1};
+    cipher_text[16] = {0xc8, 0x24, 0x18, 0x16, 0xf0, 0xd7, 0xe4, 0x89, 0x20, 0xad, 0x16, 0xa1, 0x67, 0x4e, 0x5d, 0x48};
+
+    /* Заново создаем текстовый ключ */
+    if ((bkey = ak_bckey_new_rc6_ptr(user_key, 32, ak_true))==NULL) {
+        ak_error_message( ak_error_get_value(), __func__, "wrong creation of test key" );
+        return ak_false;
+    }
+
+    /* Тестируем зашифрование одного блока информации */
+    bkey->encrypt(&bkey->key, user_text, out);
+    if (memcmp(out, cipher_text, 16) != 0) {
+        ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                           "[TEST 2] the one block encryption test from RC6 is wrong");
+        ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
+        ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text, 16, ak_true )); free( str );
+        bkey = ak_bckey_delete(bkey);
+        return ak_false;
+    }
+    if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                           "[TEST 2] the one block encryption test from RC6 is Ok" );
+
+    /* Тестируем расшифрование одного блока информации */
+    bkey->decrypt(&bkey->key, cipher_text, out);
+    if (memcmp(cipher_text, out, 16) != 0) {
+        ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                           "[TEST 2] the one block decryption test from RC6 is wrong");
+        ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text, 16, ak_true )); free( str );
+        ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
+        bkey = ak_bckey_delete(bkey);
+        return ak_false;
+    }
+    if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                            "[TEST 2] the one block decryption test from RC6 is Ok" );
+
+    bckey = ak_bckey_delete(bckey);
+    return ak_true;
 }
 
 /* ----------------------------------------------------------------------------------------------- */
