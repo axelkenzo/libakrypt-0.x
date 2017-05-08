@@ -58,7 +58,8 @@ set( SOURCES source/ak_tools.c
              source/ak_context_manager.c
              source/ak_hmac.c
              source/ak_mpzn.c
-             source/ak_curves.c )
+             source/ak_curves.c
+             source/ak_rc6.c )
 set( DOCS    doc/libakrypt.dox
              doc/refman_header.in
              doc/refman_footer.in
@@ -111,6 +112,7 @@ if( LIBAKRYPT_STATIC_LIB )
                      hash-update
                      hash-oids
                      random
+                     rc6
                      dev-random
                      bckey
                      context-manager
