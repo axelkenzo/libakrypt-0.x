@@ -43,14 +43,14 @@
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет циклический сдвиг 32-битного числа влево. */
-uint32_t rol32(uint32_t a, uint8_t n)
+ak_uint32 rol32(ak_uint32 a, ak_uint8 n)
 {
     return (a << n) | (a >> (32 - n));
 }
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет циклический сдвиг 32-битного числа вправо. */
-uint32_t ror32(uint32_t a, uint8_t n)
+ak_uint32 ror32(ak_uint32 a, ak_uint8 n)
 {
     return (a >> n) | (a << (32 - n));
 }
@@ -156,7 +156,7 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
 /*! \brief Функция выполняет развертку ключа. */
 int ak_rc6_key_schedule(ak_skey ctx)
 {
-    ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(uint32_t));
+    ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
 
     ((ak_uint32*)ctx->data)[0] = P32;
     ak_uint8 i = 0, j = 0;
@@ -164,8 +164,8 @@ int ak_rc6_key_schedule(ak_skey ctx)
         ((ak_uint32*)ctx->data)[i] = ((ak_uint32*)ctx->data)[i-1] + Q32;
 
     i = 0;
-    uint32_t a = 0, b = 0;
-    for(uint8_t k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
+    ak_uint32 a = 0, b = 0;
+    for(ak_uint8 k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
     {
         a = ((ak_uint32*)ctx->data)[i] = rol32((((ak_uint32*)ctx->data)[i] + a + b), 3);
         b = ((ak_uint32*)ctx->key.data)[j] = rol32(((ak_uint32*)ctx->key.data)[j] + a + b, a + b);
@@ -305,7 +305,7 @@ ak_bool ak_bckey_test_rc6(void)
     /* Тестовые векторы 2 + шифртекст */
 
     ak_uint8 user_key_2[32]    = {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
-                                0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe};
+                                  0x89, 0x9a, 0xab, 0xbc, 0xcd, 0xde, 0xef, 0xf0, 0x10, 0x32, 0x54, 0x76, 0x98, 0xba, 0xdc, 0xfe};
     ak_uint8 user_text_2[16]   = {0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68, 0x79, 0x8a, 0x9b, 0xac, 0xbd, 0xce, 0xdf, 0xe0, 0xf1};
     ak_uint8 cipher_text_2[16] = {0xc8, 0x24, 0x18, 0x16, 0xf0, 0xd7, 0xe4, 0x89, 0x20, 0xad, 0x16, 0xa1, 0x67, 0x4e, 0x5d, 0x48};
 
