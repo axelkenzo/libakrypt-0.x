@@ -268,7 +268,7 @@ ak_bool ak_bckey_test_rc6(void)
     int audit = ak_log_get_level();
     char *str = NULL;
 
-    /* Создаем текстовый ключ */
+    /* Создаем тестовый ключ */
     if ((bkey = ak_bckey_new_rc6_ptr(user_key_1, 32, ak_true))==NULL) {
         ak_error_message( ak_error_get_value(), __func__, "[TEST 1] wrong creation of test key" );
         return ak_false;
