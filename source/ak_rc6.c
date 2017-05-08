@@ -29,7 +29,7 @@
 
 #include <stdint.h>
 #include <stdlib.h>
-
+#include <stdio.h>
 #include <ak_skey.h>
 
 /* ----------------------------------------------------------------------------------------------- */
@@ -149,6 +149,10 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
         return ( bkey = ak_bckey_delete( bkey ));
     }
 
+    // TODO: Сделать возможность работать с исходным ключом, не наложенным на маску
+    /* Генерируем раундовые ключи, пока ключ не наложился на маску */
+    bkey->shedule_keys(&bkey->key);
+
     return bkey;
 }
 
@@ -157,6 +161,8 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
 int ak_rc6_key_schedule(ak_skey ctx)
 {
     ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
+    char *str = NULL;
+    printf("key:      %s\n", str = ak_buffer_to_hexstr( &ctx->key )); if( str ) free( str );
 
     ((ak_uint32*)ctx->data)[0] = P32;
     ak_uint8 i = 0, j = 0;
@@ -167,8 +173,8 @@ int ak_rc6_key_schedule(ak_skey ctx)
     ak_uint32 a = 0, b = 0;
     for(ak_uint8 k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
     {
-        a = ((ak_uint32*)ctx->data)[i] = rol32((((ak_uint32*)ctx->data)[i] + a + b), 3);
-        b = ((ak_uint32*)ctx->key.data)[j] = rol32(((ak_uint32*)ctx->key.data)[j] + a + b, a + b);
+        a = ((ak_uint32 *)ctx->data)[i] = rol32(((ak_uint32 *)ctx->data)[i] + a + b, 3);
+        b = ((ak_uint32 *)ctx->key.data)[j] = rol32(((ak_uint32 *)ctx->key.data)[j] + a + b, a + b);
         i = (i+1) % (2*RC6_ROUNDS+4);
         j = (j+1) % (KEY_LENGTH/W);
     }
