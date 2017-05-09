@@ -150,7 +150,7 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
     }
 
     // TODO: Сделать возможность работать с исходным ключом, не наложенным на маску
-    /* Генерируем раундовые ключи, пока ключ не наложился на маску */
+    /* Генерируем раундовые ключи */
     bkey->shedule_keys(&bkey->key);
 
     return bkey;
@@ -161,8 +161,8 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
 int ak_rc6_key_schedule(ak_skey ctx)
 {
     ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
-    char *str = NULL;
-    printf("key:      %s\n", str = ak_buffer_to_hexstr( &ctx->key )); if( str ) free( str );
+    //char *str = NULL;
+    //printf("key:      %s\n", str = ak_buffer_to_hexstr( &ctx->key )); if( str ) free( str );
 
     ((ak_uint32*)ctx->data)[0] = P32;
     ak_uint8 i = 0, j = 0;
@@ -254,13 +254,13 @@ void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
 }
 
 /* ----------------------------------------------------------------------------------------------- */
-/*! \brief Функция тестирования. */
+/*! \brief Функция тестирования алгоритма RC6. */
 ak_bool ak_bckey_test_rc6(void)
 {
-    /* Проверка тестовых векторов для ключа 256 бит
-     * The RC6 (TM) Block Cipher
-     * Ronald L. Rivest, M.J.B. Robshaw, R. Sidney, and Y.L. Yin
-     * Страница 20
+    /*! Проверка тестовых векторов для ключа 256 бит
+     *  The RC6 (TM) Block Cipher
+     *  Ronald L. Rivest, M.J.B. Robshaw, R. Sidney, and Y.L. Yin
+     *  Страница 20
      */
 
     /* Тестовые векторы 1 (нулевые вектора) + шифртекст */
@@ -287,7 +287,7 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 1] the one block encryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text_1, 16, ak_true )); free( str );
-        bkey = ak_bckey_delete(bkey);
+        //bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
@@ -300,14 +300,15 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 1] the one block decryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( user_text_1, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
-        bkey = ak_bckey_delete(bkey);
+        //bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                             "[TEST 1] the one block decryption test from RC6 is Ok" );
 
-    bkey = ak_bckey_delete(bkey);
+    //bkey = ak_bckey_delete(bkey);
 
+    /* ----------------------------------------------------------------------------------------------- */
     /* Тестовые векторы 2 + шифртекст */
 
     ak_uint8 user_key_2[32]    = {0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0x01, 0x12, 0x23, 0x34, 0x45, 0x56, 0x67, 0x78,
@@ -328,7 +329,7 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 2] the one block encryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text_2, 16, ak_true )); free( str );
-        bkey = ak_bckey_delete(bkey);
+        //bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
@@ -341,13 +342,13 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 2] the one block decryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( user_text_2, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
-        bkey = ak_bckey_delete(bkey);
+        //bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                            "[TEST 2] the one block decryption test from RC6 is Ok" );
 
-    bkey = ak_bckey_delete(bkey);
+    //bkey = ak_bckey_delete(bkey);
     return ak_true;
 }
 
