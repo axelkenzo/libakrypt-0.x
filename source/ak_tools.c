@@ -750,6 +750,12 @@ return ak_true;
 //   return ak_false;
 // }
 
+  /* Тестируем алгоритм RC6 */
+  if (ak_bckey_test_rc6() != ak_true) {
+      ak_error_message(ak_error_get_value(), __func__, "incorrect block cipher RC6 testing");
+      return ak_false;
+  }
+
   if( audit >= ak_log_maximum )
     ak_error_message( ak_error_ok, __func__ , "testing block ciphers ended successfully" );
  return ak_true;
