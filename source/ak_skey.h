@@ -198,8 +198,6 @@
  ak_bool ak_bckey_test_magma( void );
 
 /* ----------------------------------------------------------------------------------------------- */
-/*! Создание контекста ключа RC6. */
- ak_bckey ak_bckey_rc6_new(void);
 /*! Создание контекста ключа RC6 с заданным значением ключа. */
  ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const ak_bool cflag);
 /*! \brief Функция выполняет тестирование алгоритма RC6. */

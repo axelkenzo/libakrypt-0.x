@@ -73,7 +73,7 @@ int ak_rc6_key_schedule(ak_skey ctx)
     i = 0;
     ak_uint32 a = 0, b = 0;
     ak_uint8 masked = 0;
-    for(ak_uint8 k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
+    for(ak_uint8 k=1; k< 3*(2*RC6_ROUNDS+4)+1; ++k)
     {
         if (masked < KEY_LENGTH/W) {
             key[j] -= ((ak_uint32*)ctx->mask.data)[j];
@@ -92,7 +92,6 @@ int ak_rc6_key_schedule(ak_skey ctx)
 /*! \brief Функция выполняет удаление текущих раундовых ключей. */
 int ak_rc6_key_delete(ak_skey ctx)
 {
-    memset(ctx->data, 0, 32);
     free(ctx->data);
     return ak_error_ok;
 }
@@ -109,7 +108,7 @@ void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
     B += ((ak_uint32 *)(ctx->data))[0];
     D += ((ak_uint32 *)(ctx->data))[1];
     ak_uint32 t=0, u=0, temp_reg;
-    for(ak_uint8 i = 1; i <= RC6_ROUNDS; ++i)
+    for(ak_uint8 i = 1; i < RC6_ROUNDS+1; ++i)
     {
         t = rol32((B * (2 * B + 1)), LG_W);
         u = rol32((D * (2 * D + 1)), LG_W);
@@ -255,7 +254,6 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
         return ( bkey = ak_bckey_delete( bkey ));
     }
 
-    // TODO: Сделать возможность работать с исходным ключом, не наложенным на маску
     /* Генерируем раундовые ключи */
     bkey->shedule_keys(&bkey->key);
 
