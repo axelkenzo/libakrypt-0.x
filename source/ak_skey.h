@@ -202,14 +202,6 @@
  ak_bckey ak_bckey_rc6_new(void);
 /*! Создание контекста ключа RC6 с заданным значением ключа. */
  ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const ak_bool cflag);
-/*! \brief Функция выполняет развертку ключа. */
- int ak_rc6_key_schedule(ak_skey ctx);
-/*! \brief Функция выполняет удаление текущих раундовых ключей. */
- int ak_rc6_key_delete(ak_skey ctx);
-/*! \brief Функция выполняет зашифрование одного блока информации алгоритмом RC6. */
- void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out);
-/*! \brief Функция выполняет расшифрование одного блока информации алгоритмом RC6. */
- void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out);
 /*! \brief Функция выполняет тестирование алгоритма RC6. */
  ak_bool ak_bckey_test_rc6(void);
 
