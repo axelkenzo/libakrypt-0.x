@@ -248,7 +248,7 @@
   bkey->key.set_icode = ak_skey_set_icode_additive;
   bkey->key.check_icode = ak_skey_check_icode_additive;
 
-  bkey->shedule_keys = NULL;
+  bkey->schedule_keys = NULL;
   bkey->delete_keys = NULL;
   bkey->encrypt = ak_magma_encrypt_with_mask;
   bkey->decrypt = ak_magma_decrypt_with_mask;

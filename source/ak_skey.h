@@ -163,7 +163,7 @@
   /*! \brief Функция расширования одного блока информации */
    ak_function_bckey *decrypt;
   /*! \brief Функция развертки ключа */
-   ak_function_skey *shedule_keys;
+   ak_function_skey *schedule_keys;
   /*! \brief Функция уничтожения развернутых ключей */
    ak_function_skey *delete_keys;
 };

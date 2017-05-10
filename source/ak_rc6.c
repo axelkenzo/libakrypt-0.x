@@ -56,7 +56,7 @@ ak_uint32 ror32(ak_uint32 a, ak_uint8 n)
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет развертку ключа. */
-int ak_rc6_key_schedule(ak_skey ctx)
+int ak_rc6_schedule_keys(ak_skey ctx)
 {
     /* Копируем маскированный ключ */
     ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
@@ -90,7 +90,7 @@ int ak_rc6_key_schedule(ak_skey ctx)
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет удаление текущих раундовых ключей. */
-int ak_rc6_key_delete(ak_skey ctx)
+int ak_rc6_delete_keys(ak_skey ctx)
 {
     free(ctx->data);
     return ak_error_ok;
@@ -198,8 +198,8 @@ ak_bckey ak_bckey_rc6_new(void)
     bkey->key.check_icode = ak_skey_check_icode_additive;
 
     /* Устанавливаем методы */
-    bkey->shedule_keys =    ak_rc6_key_schedule;
-    bkey->delete_keys =     ak_rc6_key_delete;
+    bkey->schedule_keys =   ak_rc6_schedule_keys;
+    bkey->delete_keys =     ak_rc6_delete_keys;
     bkey->encrypt =         ak_rc6_encrypt;
     bkey->decrypt =         ak_rc6_decrypt;
 
@@ -255,7 +255,7 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
     }
 
     /* Генерируем раундовые ключи */
-    bkey->shedule_keys(&bkey->key);
+    bkey->schedule_keys(&bkey->key);
 
     return bkey;
 }
@@ -264,10 +264,10 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
 /*! \brief Функция тестирования алгоритма RC6. */
 ak_bool ak_bckey_test_rc6(void)
 {
-    /*! Проверка тестовых векторов для ключа 256 бит
-     *  The RC6 (TM) Block Cipher
-     *  Ronald L. Rivest, M.J.B. Robshaw, R. Sidney, and Y.L. Yin
-     *  Страница 20
+    /* Проверка тестовых векторов для ключа 256 бит
+     * The RC6 (TM) Block Cipher
+     * Ronald L. Rivest, M.J.B. Robshaw, R. Sidney, and Y.L. Yin
+     * Страница 20
      */
 
     /* Тестовые векторы 1 (нулевые вектора) + шифртекст */

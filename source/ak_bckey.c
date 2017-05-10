@@ -68,11 +68,11 @@
   if(( error = ak_skey_create( &bkey->key, keysize )) != ak_error_ok )
     return ak_error_message( error, __func__, "wrong creation of secret key" );
 
-  bkey->block_size =   blocksize;
-  bkey->encrypt =      NULL;
-  bkey->decrypt =      NULL;
-  bkey->shedule_keys = NULL;
-  bkey->delete_keys =  NULL;
+  bkey->block_size =    blocksize;
+  bkey->encrypt =       NULL;
+  bkey->decrypt =       NULL;
+  bkey->schedule_keys = NULL;
+  bkey->delete_keys =   NULL;
  return ak_error_ok;
 }
 
@@ -121,7 +121,7 @@
   bkey->block_size =      0;
   bkey->encrypt =      NULL;
   bkey->decrypt =      NULL;
-  bkey->shedule_keys = NULL;
+  bkey->schedule_keys = NULL;
   bkey->delete_keys =  NULL;
 
  return error;
