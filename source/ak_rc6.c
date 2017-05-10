@@ -56,6 +56,104 @@ ak_uint32 ror32(ak_uint32 a, ak_uint8 n)
 }
 
 /* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция выполняет развертку ключа. */
+int ak_rc6_key_schedule(ak_skey ctx)
+{
+    ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
+    ak_uint32 *key = calloc(32, sizeof(ak_uint32));
+    for(size_t idx = 0; idx < (ctx->key.size >> 2); idx++ )
+        key[idx]= ((ak_uint32 *) ctx->key.data)[idx] - ((ak_uint32 *) ctx->mask.data)[idx];
+
+    ((ak_uint32*)ctx->data)[0] = P32;
+    ak_uint8 i = 0, j = 0;
+    for(i = 1; i <= 2*RC6_ROUNDS+3; ++i)
+        ((ak_uint32*)ctx->data)[i] = ((ak_uint32*)ctx->data)[i-1] + Q32;
+
+    i = 0;
+    ak_uint32 a = 0, b = 0;
+    for(ak_uint8 k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
+    {
+        a = ((ak_uint32 *)ctx->data)[i] = rol32(((ak_uint32 *)ctx->data)[i] + a + b, 3);
+        b = ((ak_uint32 *)key)[j] = rol32(((ak_uint32 *)key)[j] + a + b, a + b);
+        i = (i+1) % (2*RC6_ROUNDS+4);
+        j = (j+1) % (KEY_LENGTH/W); // mod 8
+    }
+    return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция выполняет удаление текущих раундовых ключей. */
+int ak_rc6_key_delete(ak_skey ctx)
+{
+    free(ctx->data);
+    return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция выполняет зашифрование одного блока информации алгоритмом RC6. */
+void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
+{
+    register ak_uint32 A = ((ak_uint32 *)in)[0];
+    register ak_uint32 B = ((ak_uint32 *)in)[1];
+    register ak_uint32 C = ((ak_uint32 *)in)[2];
+    register ak_uint32 D = ((ak_uint32 *)in)[3];
+
+    B += ((ak_uint32 *)(ctx->data))[0];
+    D += ((ak_uint32 *)(ctx->data))[1];
+    ak_uint32 t=0, u=0, temp_reg;
+    for(ak_uint8 i = 1; i <= RC6_ROUNDS; ++i)
+    {
+        t = rol32((B * (2 * B + 1)), LG_W);
+        u = rol32((D * (2 * D + 1)), LG_W);
+        A = rol32(A ^ t, u) + ((ak_uint32*)ctx->data)[2*i];
+        C = rol32(C ^ u, t) + ((ak_uint32*)ctx->data)[2*i+1];
+        temp_reg = A;
+        A = B;
+        B = C;
+        C = D;
+        D = temp_reg;
+    }
+    A += ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 2];
+    C += ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 3];
+    ((ak_uint32 *)out)[0]=A;
+    ((ak_uint32 *)out)[1]=B;
+    ((ak_uint32 *)out)[2]=C;
+    ((ak_uint32 *)out)[3]=D;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция выполняет расшифрование одного блока информации алгоритмом RC6. */
+void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
+{
+    register ak_uint32 A = ((ak_uint32 *)in)[0];
+    register ak_uint32 B = ((ak_uint32 *)in)[1];
+    register ak_uint32 C = ((ak_uint32 *)in)[2];
+    register ak_uint32 D = ((ak_uint32 *)in)[3];
+
+    C -= ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 3];
+    A -= ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 2];
+    ak_uint32 t=0, u=0, temp_reg;
+    for(ak_uint8 i = RC6_ROUNDS; i > 0; --i)
+    {
+        temp_reg = D;
+        D = C;
+        C = B;
+        B = A;
+        A = temp_reg;
+        t = rol32((B*(2*B+1)), LG_W);
+        u = rol32((D*(2*D+1)), LG_W);
+        C = ror32((C-((ak_uint32*)ctx->data)[2*i+1]), t) ^ u;
+        A = ror32((A-((ak_uint32*)ctx->data)[2*i]), u) ^ t;
+    }
+    D -= ((ak_uint32*)ctx->data)[1];
+    B -= ((ak_uint32*)ctx->data)[0];
+    ((ak_uint32 *)out)[0]=A;
+    ((ak_uint32 *)out)[1]=B;
+    ((ak_uint32 *)out)[2]=C;
+    ((ak_uint32 *)out)[3]=D;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция создает контекст ключа блочного алгоритма шифрования RC6
 
    После выполнения данной функции создается указатель на контекст ключа и устанавливаются
@@ -154,103 +252,6 @@ ak_bckey ak_bckey_new_rc6_ptr(const ak_pointer keyptr, const size_t size, const 
     bkey->shedule_keys(&bkey->key);
 
     return bkey;
-}
-
-/* ----------------------------------------------------------------------------------------------- */
-/*! \brief Функция выполняет развертку ключа. */
-int ak_rc6_key_schedule(ak_skey ctx)
-{
-    ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
-    //char *str = NULL;
-    //printf("key:      %s\n", str = ak_buffer_to_hexstr( &ctx->key )); if( str ) free( str );
-
-    ((ak_uint32*)ctx->data)[0] = P32;
-    ak_uint8 i = 0, j = 0;
-    for(i = 1; i <= 2*RC6_ROUNDS+3; ++i)
-        ((ak_uint32*)ctx->data)[i] = ((ak_uint32*)ctx->data)[i-1] + Q32;
-
-    i = 0;
-    ak_uint32 a = 0, b = 0;
-    for(ak_uint8 k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
-    {
-        a = ((ak_uint32 *)ctx->data)[i] = rol32(((ak_uint32 *)ctx->data)[i] + a + b, 3);
-        b = ((ak_uint32 *)ctx->key.data)[j] = rol32(((ak_uint32 *)ctx->key.data)[j] + a + b, a + b);
-        i = (i+1) % (2*RC6_ROUNDS+4);
-        j = (j+1) % (KEY_LENGTH/W);
-    }
-    return ak_error_ok;
-}
-
-/* ----------------------------------------------------------------------------------------------- */
-/*! \brief Функция выполняет удаление текущих раундовых ключей. */
-int ak_rc6_key_delete(ak_skey ctx)
-{
-    free(ctx->data);
-    return ak_error_ok;
-}
-
-/* ----------------------------------------------------------------------------------------------- */
-/*! \brief Функция выполняет зашифрование одного блока информации алгоритмом RC6. */
-void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
-{
-    register ak_uint32 A = ((ak_uint32 *)in)[0];
-    register ak_uint32 B = ((ak_uint32 *)in)[1];
-    register ak_uint32 C = ((ak_uint32 *)in)[2];
-    register ak_uint32 D = ((ak_uint32 *)in)[3];
-
-    B += ((ak_uint32 *)(ctx->data))[0];
-    D += ((ak_uint32 *)(ctx->data))[1];
-    ak_uint32 t=0, u=0, temp_reg;
-    for(ak_uint8 i = 1; i <= RC6_ROUNDS; ++i)
-    {
-        t = rol32((B * (2 * B + 1)), LG_W);
-        u = rol32((D * (2 * D + 1)), LG_W);
-        A = rol32(A ^ t, u) + ((ak_uint32*)ctx->data)[2*i];
-        C = rol32(C ^ u, t) + ((ak_uint32*)ctx->data)[2*i+1];
-        temp_reg = A;
-        A = B;
-        B = C;
-        C = D;
-        D = temp_reg;
-    }
-    A += ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 2];
-    C += ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 3];
-    ((ak_uint32 *)out)[0]=A;
-    ((ak_uint32 *)out)[1]=B;
-    ((ak_uint32 *)out)[2]=C;
-    ((ak_uint32 *)out)[3]=D;
-}
-
-/* ----------------------------------------------------------------------------------------------- */
-/*! \brief Функция выполняет расшифрование одного блока информации алгоритмом RC6. */
-void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
-{
-    register ak_uint32 A = ((ak_uint32 *)in)[0];
-    register ak_uint32 B = ((ak_uint32 *)in)[1];
-    register ak_uint32 C = ((ak_uint32 *)in)[2];
-    register ak_uint32 D = ((ak_uint32 *)in)[3];
-
-    C -= ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 3];
-    A -= ((ak_uint32*)ctx->data)[2*RC6_ROUNDS + 2];
-    ak_uint32 t=0, u=0, temp_reg;
-    for(ak_uint8 i = RC6_ROUNDS; i > 0; --i)
-    {
-        temp_reg = D;
-        D = C;
-        C = B;
-        B = A;
-        A = temp_reg;
-        t = rol32((B*(2*B+1)), LG_W);
-        u = rol32((D*(2*D+1)), LG_W);
-        C = ror32((C-((ak_uint32*)ctx->data)[2*i+1]), t) ^ u;
-        A = ror32((A-((ak_uint32*)ctx->data)[2*i]), u) ^ t;
-    }
-    D -= ((ak_uint32*)ctx->data)[1];
-    B -= ((ak_uint32*)ctx->data)[0];
-    ((ak_uint32 *)out)[0]=A;
-    ((ak_uint32 *)out)[1]=B;
-    ((ak_uint32 *)out)[2]=C;
-    ((ak_uint32 *)out)[3]=D;
 }
 
 /* ----------------------------------------------------------------------------------------------- */
