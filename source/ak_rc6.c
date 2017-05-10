@@ -29,7 +29,6 @@
 
 #include <stdint.h>
 #include <stdlib.h>
-#include <stdio.h>
 #include <ak_skey.h>
 
 /* ----------------------------------------------------------------------------------------------- */
@@ -59,25 +58,33 @@ ak_uint32 ror32(ak_uint32 a, ak_uint8 n)
 /*! \brief Функция выполняет развертку ключа. */
 int ak_rc6_key_schedule(ak_skey ctx)
 {
+    /* Копируем маскированный ключ */
     ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
-    ak_uint32 *key = calloc(32, sizeof(ak_uint32));
-    for(size_t idx = 0; idx < (ctx->key.size >> 2); idx++ )
-        key[idx]= ((ak_uint32 *) ctx->key.data)[idx] - ((ak_uint32 *) ctx->mask.data)[idx];
+    ak_uint32 *key = calloc(8, sizeof(ak_uint32));
+    memcpy(key, ctx->key.data, 32);
 
+    /* Развертываем начальную последовательность раундовых ключей */
     ((ak_uint32*)ctx->data)[0] = P32;
     ak_uint8 i = 0, j = 0;
     for(i = 1; i <= 2*RC6_ROUNDS+3; ++i)
         ((ak_uint32*)ctx->data)[i] = ((ak_uint32*)ctx->data)[i-1] + Q32;
 
+    /* Модифицируем раундовые ключи с помощью пользовательского ключа */
     i = 0;
     ak_uint32 a = 0, b = 0;
+    ak_uint8 masked = 0;
     for(ak_uint8 k=1; k<=3*(2*RC6_ROUNDS+4); ++k)
     {
+        if (masked < KEY_LENGTH/W) {
+            key[j] -= ((ak_uint32*)ctx->mask.data)[j];
+            masked++;
+        }
         a = ((ak_uint32 *)ctx->data)[i] = rol32(((ak_uint32 *)ctx->data)[i] + a + b, 3);
-        b = ((ak_uint32 *)key)[j] = rol32(((ak_uint32 *)key)[j] + a + b, a + b);
+        b = key[j] = rol32(key[j] + a + b, a + b);
         i = (i+1) % (2*RC6_ROUNDS+4);
-        j = (j+1) % (KEY_LENGTH/W); // mod 8
+        j = (j+1) % (KEY_LENGTH/W);
     }
+    free(key);
     return ak_error_ok;
 }
 
@@ -85,6 +92,7 @@ int ak_rc6_key_schedule(ak_skey ctx)
 /*! \brief Функция выполняет удаление текущих раундовых ключей. */
 int ak_rc6_key_delete(ak_skey ctx)
 {
+    memset(ctx->data, 0, 32);
     free(ctx->data);
     return ak_error_ok;
 }
