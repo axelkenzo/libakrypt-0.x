@@ -45,7 +45,7 @@ void test(ak_uint8 *user_key, ak_uint8 *user_text, ak_uint8 *cipher_text)
     printf("std user text:\t%s\n", str = ak_ptr_to_hexstr( user_text, 16, ak_false )); free( str );
     printf("\n");
 
-    //bkey = ak_bckey_delete(bkey);
+    bkey = ak_bckey_delete(bkey);
 }
 
 int main( void )

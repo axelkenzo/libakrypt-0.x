@@ -92,7 +92,7 @@ int ak_rc6_schedule_keys(ak_skey ctx)
 /*! \brief Функция выполняет удаление текущих раундовых ключей. */
 int ak_rc6_delete_keys(ak_skey ctx)
 {
-    free(ctx->data);
+    //free(ctx->data);
     return ak_error_ok;
 }
 
@@ -294,7 +294,7 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 1] the one block encryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text_1, 16, ak_true )); free( str );
-        //bkey = ak_bckey_delete(bkey);
+        bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
@@ -307,13 +307,13 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 1] the one block decryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( user_text_1, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
-        //bkey = ak_bckey_delete(bkey);
+        bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                             "[TEST 1] the one block decryption test from RC6 is Ok" );
 
-    //bkey = ak_bckey_delete(bkey);
+    bkey = ak_bckey_delete(bkey);
 
     /* ----------------------------------------------------------------------------------------------- */
     /* Тестовые векторы 2 + шифртекст */
@@ -336,7 +336,7 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 2] the one block encryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( cipher_text_2, 16, ak_true )); free( str );
-        //bkey = ak_bckey_delete(bkey);
+        bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
@@ -349,13 +349,13 @@ ak_bool ak_bckey_test_rc6(void)
                            "[TEST 2] the one block decryption test from RC6 is wrong");
         ak_log_set_message( str = ak_ptr_to_hexstr( user_text_2, 16, ak_true )); free( str );
         ak_log_set_message( str = ak_ptr_to_hexstr( out, 16, ak_true )); free( str );
-        //bkey = ak_bckey_delete(bkey);
+        bkey = ak_bckey_delete(bkey);
         return ak_false;
     }
     if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                            "[TEST 2] the one block decryption test from RC6 is Ok" );
 
-    //bkey = ak_bckey_delete(bkey);
+    bkey = ak_bckey_delete(bkey);
     return ak_true;
 }
 
