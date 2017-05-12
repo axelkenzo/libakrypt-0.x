@@ -56,7 +56,7 @@ ak_uint32 ror32(ak_uint32 a, ak_uint8 n)
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет развертку ключа. */
-int ak_rc6_schedule_keys(ak_skey ctx)
+static int ak_rc6_schedule_keys(ak_skey ctx)
 {
     /* Копируем маскированный ключ */
     ctx->data = (ak_uint32 *)calloc(2*RC6_ROUNDS+4, sizeof(ak_uint32));
@@ -89,16 +89,8 @@ int ak_rc6_schedule_keys(ak_skey ctx)
 }
 
 /* ----------------------------------------------------------------------------------------------- */
-/*! \brief Функция выполняет удаление текущих раундовых ключей. */
-int ak_rc6_delete_keys(ak_skey ctx)
-{
-    //free(ctx->data);
-    return ak_error_ok;
-}
-
-/* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет зашифрование одного блока информации алгоритмом RC6. */
-void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
+static void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
 {
     register ak_uint32 A = ((ak_uint32 *)in)[0];
     register ak_uint32 B = ((ak_uint32 *)in)[1];
@@ -130,7 +122,7 @@ void ak_rc6_encrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция выполняет расшифрование одного блока информации алгоритмом RC6. */
-void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
+static void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
 {
     register ak_uint32 A = ((ak_uint32 *)in)[0];
     register ak_uint32 B = ((ak_uint32 *)in)[1];
@@ -173,7 +165,7 @@ void ak_rc6_decrypt(ak_skey ctx, ak_pointer in, ak_pointer out)
    @return Функция возвращает указатель на созданный контекст. В случае возникновения ошибки,
    возвращается NULL, код ошибки может быть получен с помощью вызова функции ak_error_get_value()  */
 /* ----------------------------------------------------------------------------------------------- */
-ak_bckey ak_bckey_rc6_new(void)
+static ak_bckey ak_bckey_rc6_new(void)
 {
     ak_bckey bkey = NULL;
 
@@ -199,7 +191,7 @@ ak_bckey ak_bckey_rc6_new(void)
 
     /* Устанавливаем методы */
     bkey->schedule_keys =   ak_rc6_schedule_keys;
-    bkey->delete_keys =     ak_rc6_delete_keys;
+    bkey->delete_keys =     NULL;
     bkey->encrypt =         ak_rc6_encrypt;
     bkey->decrypt =         ak_rc6_decrypt;
 
