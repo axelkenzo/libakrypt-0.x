@@ -292,7 +292,7 @@ static int ak_random_bbs_random( ak_random rnd, const ak_pointer ptr, const size
 int ak_random_create_bbs( ak_random generator ) {
     int error = ak_error_ok;
     //ak_random_create устанавливает поля random на NULL, и функцию освобождения памяти free().
-    if ( ( error = ak_random_create( generator ) ) != ak_error_ok )
+    if ( (error = ak_random_create( generator )) != ak_error_ok )
         return ak_error_message( error, __func__ , "wrong initialization of random generator" );
 
     if ( (generator -> data  = malloc(sizeof(struct random_bbs))) == NULL )
@@ -309,12 +309,14 @@ int ak_random_create_bbs( ak_random generator ) {
     ak_mpzn_set_hexstr( (( ak_random_bbs ) ( generator -> data ))->modulo, ak_mpzn512_size,
                         "aca1fb919a0d8b681215dd976000e3fbedc2bcc4d52db81af0416b67062a144ae64c1d07e31bebf6b95b0eba9f9601facc530eb90bdce0534a9bceab23032a31" );
 
-    //Сгенерируем случайный ak_mpzn512 (можно задать длину 64, 128, 256, 512),
+    //Сгенерируем случайный ak_mpzn256 (можно задать длину, кратную 64 битам и не большую 512 бит),
     //который зададим в качестве инициализатора начального значения:
-    ak_mpzn512 init;
-    for (size_t i = 0; i < ak_mpzn256_size; ++i)
-        init[i] = ak_random_value();
-    generator->randomize_ptr( generator, &init, ak_mpzn256_size );
+    ak_mpzn256 init;
+    //Если было сгенерировано неподходящее значение, то пробуем снова:
+    do {
+        for (size_t i = 0; i < ak_mpzn256_size; ++i)
+            init[i] = ak_random_value();
+    } while ( (error = ak_random_bbs_randomize_ptr( generator, &init, ak_mpzn256_size )) == ak_error_undefined_value );
 
     return error;
 }

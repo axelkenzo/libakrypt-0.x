@@ -19,7 +19,7 @@ int main ( void ) {
     //и вывод его на экран
     if ((randBuffer = ak_random_buffer(BBShandle, 64)) != NULL) {
         char *bufStr = ak_buffer_to_hexstr(randBuffer);
-        printf("%d-bytes length random data by BBS:\n%s\n", (int) ak_buffer_get_size(randBuffer), bufStr);
+        printf("%d bytes-length random data by BBS:\n%s\n", (int) ak_buffer_get_size(randBuffer), bufStr);
 
         free( bufStr );
         randBuffer = ak_buffer_delete( randBuffer );
