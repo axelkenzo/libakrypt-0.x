@@ -433,6 +433,8 @@
  dll_export ak_bool ak_ptr_is_equal( const ak_pointer, const ak_pointer , const size_t );
 
 /* ----------------------------------------------------------------------------------------------- */
+/*! \brief Создание дескриптора генератора BBS. */
+ dll_export ak_handle ak_random_new_bbs( void );
 /*! \brief Создание дескриптора линейного конгруэнтного генератора. */
  dll_export ak_handle ak_random_new_lcg( void  );
 /*! \brief Создание дескриптора генератора, предоставляющего доступ к заданному файлу с данными. */
