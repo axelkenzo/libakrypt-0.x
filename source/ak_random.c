@@ -193,7 +193,7 @@ static int ak_random_bbs_next( ak_random rnd )
 //Функция задает начальное значение генератора равным x0^deg в форме Монтгомери, т.е. (x0^deg)*r (mod modulo)
 //где x0 - заданный по умолчанию вычет типа ak_mpzn512, для которого достигается максимальный период генератора,
 //а deg - значение ptr;
-//size - размер ptr в словах, то есть в ak_uint64
+//size - размер ptr в байтах
 static int ak_random_bbs_randomize_ptr( ak_random rnd, const ak_pointer ptr, const size_t size )
 {
     if( rnd == NULL )
@@ -206,17 +206,17 @@ static int ak_random_bbs_randomize_ptr( ak_random rnd, const ak_pointer ptr, con
         return ak_error_message( ak_error_zero_length, __func__ , "use initial vector with zero length" );
 
     //Размер начального вектора не должен быть больше 512 бит:
-    if( size > ak_mpzn512_size )
+    if( size > ak_mpzn512_size*sizeof( ak_uint64 ) )
         return ak_error_message( ak_error_wrong_length, __func__ , "use initial vector with wrong length" );
 
     ak_mpzn512 deg, x0_mon; //x0_mon - вычет x0 в форме Монтгомери, т.е. x0*r (mod modulo)
     ak_mpzn_set_hexstr( x0_mon, ak_mpzn512_size,
                         "2c6db990a757c41270b9b6bc1d6f432ebc8fd68e2cdd54dc73bb0fa93ca9d6e81841c52175e52871369ddf9fa8d4bae58edb607f31952b2c655ad2dfb71df9b4" );
 
-    //На случай, если size < ak_mpzn512_size, скопируем значение ptr в ak_mpzn512,
+    //На случай, если size < 512 бит, скопируем значение ptr в ak_mpzn512,
     //чтобы можно было возвести x0 в заданную степень корректно:
     memset( deg, 0, ak_mpzn512_size*sizeof( ak_uint64 ) );
-    memcpy( deg, ptr, size*sizeof( ak_uint64 ) );
+    memcpy( deg, ptr, size );
 
     //Порядок x0 есть P1*Q1, где modulo = P*Q, P = 2*P1+1, Q = 2*Q1+1, Q,P,Q1,P1 - простые.
     //Поэтому для сохранения порядка для x0^deg, deg не может равняться P1, Q1 или быть больше или равным P1*Q1,
@@ -309,14 +309,14 @@ int ak_random_create_bbs( ak_random generator ) {
     ak_mpzn_set_hexstr( (( ak_random_bbs ) ( generator -> data ))->modulo, ak_mpzn512_size,
                         "aca1fb919a0d8b681215dd976000e3fbedc2bcc4d52db81af0416b67062a144ae64c1d07e31bebf6b95b0eba9f9601facc530eb90bdce0534a9bceab23032a31" );
 
-    //Сгенерируем случайный ak_mpzn256 (можно задать длину, кратную 64 битам и не большую 512 бит),
+    //Сгенерируем случайный ak_mpzn256 (можно задать инициализатор любой длины, кратной байту),
     //который зададим в качестве инициализатора начального значения:
     ak_mpzn256 init;
     //Если было сгенерировано неподходящее значение, то пробуем снова:
     do {
         for (size_t i = 0; i < ak_mpzn256_size; ++i)
             init[i] = ak_random_value();
-    } while ( (error = ak_random_bbs_randomize_ptr( generator, &init, ak_mpzn256_size )) == ak_error_undefined_value );
+    } while ( (error = ak_random_bbs_randomize_ptr( generator, &init, ak_mpzn256_size*sizeof( ak_uint64 ) )) == ak_error_undefined_value );
 
     return error;
 }
