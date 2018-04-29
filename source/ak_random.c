@@ -137,12 +137,22 @@ typedef int ( ak_function_random_bbs_uint8 ) ( ak_random rnd, ak_uint8 *byte );
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Класс для хранения внутренних состояний генератора BBS                                  */
 struct random_bbs {
-    /*! \brief Модуль генератора (512 бит) */
-    ak_mpzn512 modulo;
     /*! \brief Текущее значение внутреннего состояния генератора */
     ak_mpzn512 value;
+    /*! \brief Модуль генератора (512 бит) */
+    ak_mpzn512 modulo;
+    /*! \brief Константа, используемая в арифметике Монтгомери. Представляет собой младшее слово
+    числа n, удовлетворяющего равенству \f$ r \cdot s - n \cdot modulo = 1, \f$ где
+    \f$ modulo < r = 2^{512} \f$ - множитель в представлении Монтгомери */
+    ak_uint64 n0;
+    /*! \brief Базовое начальное значение генератора, для которого достигается максимально возможный
+     период. Под термином базовый подразумевается то, что при инициализации генератора это значение
+     возводится в случайную степень для получения случайного начального значения с сохранением
+     величины периода.
+     Записано в форме Монтгомери, т.е. \f$ x0mon \equiv x_0 \cdot r \pmod{modulo}. \f$  */
+    ak_mpzn512 x0mon;
 
-    /*! \brief Указатель на функцию получения одного байта: */
+    /*! \brief Указатель на функцию получения одного байта */
     ak_function_random_bbs_uint8 *get_byte;
 };
 typedef struct random_bbs *ak_random_bbs;
@@ -151,18 +161,21 @@ typedef struct random_bbs *ak_random_bbs;
 //static лишает функцию внешней связности
 static int ak_random_bbs_uint8( ak_random rnd, ak_uint8 *byte )
 {
-    //static лишает функцию внешней связности
     if ( rnd == NULL )
         //func - макрос, показывающий имя функции
         return ak_error_message(ak_error_null_pointer, __func__, "use a null pointer to a random generator" );
 
-    *byte = 0;
     //Так как младшие 64 бита value совпадают с младшим словом value[0], то найти младший бит value,
     //т.е. value mod 2 совсем нетрудно:
     for ( size_t i = 0; i < 8; ++i ) {
-        //Получаем младший бит value, сдвигаем его на старшую незанятую позицию
-        //и прибавляем к текущим битам byte:
-        *byte ^= ( (( ak_random_bbs ) ( rnd -> data )) -> value[0] & 0x0000000000000001ULL ) << (7 - i);
+        //Cдвигаем биты byte на одну позицию влево, чтобы освободить место в младшем разряде
+        //для добавляемого бита
+        //(заметим, что обнулять значение byte нет необходимости, так как после сдвига младший разряд всегда ноль
+        //и в него будет добавлен младший бит value, и за весь цикл все старые значения
+        //будут таким образом "вытеснены" новыми:
+        *byte <<= 1;
+        //Получаем младший бит value и прибавляем его к текущим битам byte:
+        *byte ^= (( ak_random_bbs ) ( rnd -> data )) -> value[0] & 0x0000000000000001ULL;
         rnd -> next( rnd );
     }
 
@@ -178,12 +191,11 @@ static int ak_random_bbs_next( ak_random rnd )
 
     //Возведение текущего значения генератора в квадрат,
     //т.е. переход к следующему значению:
-    ak_mpzn_mul_montgomery( (( ak_random_bbs ) ( rnd -> data ))->value,
-                            (( ak_random_bbs ) ( rnd -> data ))->value,
-                            (( ak_random_bbs ) ( rnd -> data ))->value,
-                            (( ak_random_bbs ) ( rnd -> data ))->modulo,
-                            6455409880403415343ULL, //Младшее слово числа n: r*s - n*modulo = 1,
-                                                    //где r > modulo, r = 2^512
+    ak_mpzn_mul_montgomery( (( ak_random_bbs ) ( rnd -> data )) -> value,
+                            (( ak_random_bbs ) ( rnd -> data )) -> value,
+                            (( ak_random_bbs ) ( rnd -> data )) -> value,
+                            (( ak_random_bbs ) ( rnd -> data )) -> modulo,
+                            (( ak_random_bbs ) ( rnd -> data )) -> n0,
                             ak_mpzn512_size );
 
     return ak_error_ok;
@@ -209,48 +221,27 @@ static int ak_random_bbs_randomize_ptr( ak_random rnd, const ak_pointer ptr, con
     if( size > ak_mpzn512_size*sizeof( ak_uint64 ) )
         return ak_error_message( ak_error_wrong_length, __func__ , "use initial vector with wrong length" );
 
-    ak_mpzn512 deg, x0_mon; //x0_mon - вычет x0 в форме Монтгомери, т.е. x0*r (mod modulo)
-    ak_mpzn_set_hexstr( x0_mon, ak_mpzn512_size,
-                        "2c6db990a757c41270b9b6bc1d6f432ebc8fd68e2cdd54dc73bb0fa93ca9d6e81841c52175e52871369ddf9fa8d4bae58edb607f31952b2c655ad2dfb71df9b4" );
-
-    //На случай, если size < 512 бит, скопируем значение ptr в ak_mpzn512,
+    ak_mpzn512 deg;
+    //На случай, если size < 512 бит, скопируем значение ptr в deg,
     //чтобы можно было возвести x0 в заданную степень корректно:
     memset( deg, 0, ak_mpzn512_size*sizeof( ak_uint64 ) );
     memcpy( deg, ptr, size );
 
-    //Порядок x0 есть P1*Q1, где modulo = P*Q, P = 2*P1+1, Q = 2*Q1+1, Q,P,Q1,P1 - простые.
-    //Поэтому для сохранения порядка для x0^deg, deg не может равняться P1, Q1 или быть больше или равным P1*Q1,
-    //Проверим это:
-    ak_mpzn512 Q1, P1, Q1P1;
-    ak_mpzn_set_hexstr( Q1, ak_mpzn512_size,
-                        "6f865cd09274c0213658f6842bf18f8c59fcb6cbbced58d913a3d85796846f1f" );
-    ak_mpzn_set_hexstr( P1, ak_mpzn512_size,
-                        "63114becec5bc3c6bd9e84619df7dbc8aa31b679568b279abbd394f097c4ddc7" );
-    ak_mpzn_set_hexstr( Q1P1, ak_mpzn512_size,
-                        "2b287ee4668362da04857765d80038fefb70af31354b6e06bc105ad9c18a8512504732e3395eb909b45b063bc2f0cad430fd8d0bb93af7daeaeb3d06b19c2419" );
-    int degP1Q1cmp = ak_mpzn_cmp( deg, Q1P1, ak_mpzn512_size );
-    if ( !ak_mpzn_cmp( deg, Q1, ak_mpzn512_size ) || /*Если deg = Q1*/
-         !ak_mpzn_cmp( deg, P1, ak_mpzn512_size ) || /*Если deg = P1*/
-         !degP1Q1cmp || /*Если deg = Q1*P1*/
-          degP1Q1cmp == 1 /*Если deg > Q1*P1*/ )
-        //Выбран наиболее подходящий вариант ошибки:
-        return ak_error_message( ak_error_undefined_value, __func__, "use initial vector with wrong value" );
-
     //Установка начального значения равным (x0^deg)*r (mod modulo),
     //т.е. равным x0^deg в представлении Монтгомери
-    ak_mpzn_modpow_montgomery( (( ak_random_bbs ) ( rnd -> data ))->value,
-                               x0_mon,
+    ak_mpzn_modpow_montgomery( (( ak_random_bbs ) ( rnd -> data )) -> value,
+                               (( ak_random_bbs ) ( rnd -> data )) -> x0mon,
                                deg,
-                               (( ak_random_bbs ) ( rnd -> data ))->modulo,
-                               6455409880403415343ULL, //Младшее слово числа n: r*s - n*modulo = 1,
-                                                       //где r > modulo, r = 2^512
+                               (( ak_random_bbs ) ( rnd -> data )) -> modulo,
+                               (( ak_random_bbs ) ( rnd -> data )) -> n0,
                                ak_mpzn512_size );
 
     return ak_error_ok;
 }
 
 /* ----------------------------------------------------------------------------------------------- */
-static int ak_random_bbs_random( ak_random rnd, const ak_pointer ptr, const size_t size ) {
+static int ak_random_bbs_random( ak_random rnd, const ak_pointer ptr, const size_t size )
+{
     if( rnd == NULL )
         return ak_error_message( ak_error_null_pointer, __func__ , "use a null pointer to a random generator" );
 
@@ -262,19 +253,18 @@ static int ak_random_bbs_random( ak_random rnd, const ak_pointer ptr, const size
 
     ak_uint8 *bytes = ptr; //Заметим, что квалификатор const у ptr относится к указателю,
                            //а не к данным
-    for (size_t i = 0; i < size; ++i, ++bytes)
+    for ( size_t i = 0; i < size; ++i, ++bytes )
         (( ak_random_bbs ) ( rnd -> data )) -> get_byte( rnd, bytes );
 
     return ak_error_ok;
-
 }
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! Данный генератор вырабатывает последовательность внутренних состояний, удовлетворяющую
-    сравнению \f$ x_{n+1} \equiv {x_n}^{2} \pmod{m}, \f$
-    в котором константа \f$ m \f$ удовлетворяет соотношению
-    \f$ m = p \cdot q, \f$ где \f$ p \f$ и \f$ q \f$ - простые числа, сравнимые с 3 по модулю 4.
-    В данной реализации \f$ m = 0xaca1fb919a0d8b681215dd976000e3fbedc2bcc4d52db81af0416b67062a144ae64c1d\
+    сравнению \f$ x_{n+1} \equiv {x_n}^{2} \pmod{modulo}, \f$
+    в котором константа \f$ modulo \f$ удовлетворяет соотношению
+    \f$ modulo = p \cdot q, \f$ где \f$ p \f$ и \f$ q \f$ - простые числа, сравнимые с 3 по модулю 4.
+    В данной реализации \f$ modulo = 0xaca1fb919a0d8b681215dd976000e3fbedc2bcc4d52db81af0416b67062a144ae64c1d\
     07e31bebf6b95b0eba9f9601facc530eb90bdce0534a9bceab23032a31 \f$
 
     Далее, последовательность внутренних состояний преобразуется в выходную последовательность
@@ -289,7 +279,8 @@ static int ak_random_bbs_random( ak_random rnd, const ak_pointer ptr, const size
 //устанавливает указатели на функции, выделяет память под внутреннюю структуру BBS и устанавливает её значения
 
 //P.S. Слова create и destroy означают установку и очистку значений полей структур
-int ak_random_create_bbs( ak_random generator ) {
+int ak_random_create_bbs( ak_random generator )
+{
     int error = ak_error_ok;
     //ak_random_create устанавливает поля random на NULL, и функцию освобождения памяти free().
     if ( (error = ak_random_create( generator )) != ak_error_ok )
@@ -306,17 +297,17 @@ int ak_random_create_bbs( ak_random generator ) {
     (( ak_random_bbs ) ( generator -> data )) -> get_byte = ak_random_bbs_uint8;
 
     //Установим модуль генератора:
-    ak_mpzn_set_hexstr( (( ak_random_bbs ) ( generator -> data ))->modulo, ak_mpzn512_size,
+    ak_mpzn_set_hexstr( (( ak_random_bbs ) ( generator -> data )) -> modulo, ak_mpzn512_size,
                         "aca1fb919a0d8b681215dd976000e3fbedc2bcc4d52db81af0416b67062a144ae64c1d07e31bebf6b95b0eba9f9601facc530eb90bdce0534a9bceab23032a31" );
+    //Установим базовое начальное значение и величину n0:
+    ak_mpzn_set_hexstr( (( ak_random_bbs ) ( generator -> data )) -> x0mon, ak_mpzn512_size,
+                        "2c6db990a757c41270b9b6bc1d6f432ebc8fd68e2cdd54dc73bb0fa93ca9d6e81841c52175e52871369ddf9fa8d4bae58edb607f31952b2c655ad2dfb71df9b4" );
+    (( ak_random_bbs ) ( generator -> data )) -> n0 = 6455409880403415343ULL;
 
-    //Сгенерируем случайный ak_mpzn256 (можно задать инициализатор любой длины, кратной байту),
+    //Сгенерируем случайный ak_uint64 (можно задать инициализатор любой длины, кратной байту и не большей 512 бит),
     //который зададим в качестве инициализатора начального значения:
-    ak_mpzn256 init;
-    //Если было сгенерировано неподходящее значение, то пробуем снова:
-    do {
-        for (size_t i = 0; i < ak_mpzn256_size; ++i)
-            init[i] = ak_random_value();
-    } while ( (error = ak_random_bbs_randomize_ptr( generator, &init, ak_mpzn256_size*sizeof( ak_uint64 ) )) == ak_error_undefined_value );
+    ak_uint64 init = ak_random_value();
+    error = ak_random_bbs_randomize_ptr( generator, &init, sizeof( ak_uint64 ) );
 
     return error;
 }
@@ -654,7 +645,8 @@ int ak_random_create_bbs( ak_random generator ) {
 //P.S. Слова new и delete означают выделение и освобождение динамической памяти
 //Заметим, что delete происходит при отключении библиотеки при удалении структуры
 //управления контекстами (для каждого объекта в этой структуре указывается необходимая функция delete)
-ak_handle ak_random_new_bbs( void ) {
+ak_handle ak_random_new_bbs( void )
+{
     int error = ak_error_ok;
     ak_random generator = NULL;
 
