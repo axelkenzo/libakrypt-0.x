@@ -71,6 +71,7 @@ set( SOURCES        source/ak_log.c
                     source/ak_mpzn.c
                     source/ak_curves.c
                     source/ak_sign.c
+                    source/ak_sha2.c
 )
 
 set( DOCS           doc/libakrypt.dox
