@@ -264,8 +264,8 @@ static int ak_random_bbs_random( ak_random rnd, const ak_pointer ptr, const size
     сравнению \f$ x_{n+1} \equiv {x_n}^{2} \pmod{modulo}, \f$
     в котором константа \f$ modulo \f$ удовлетворяет соотношению
     \f$ modulo = p \cdot q, \f$ где \f$ p \f$ и \f$ q \f$ - простые числа, сравнимые с 3 по модулю 4.
-    В данной реализации \f$ modulo = 0xaca1fb919a0d8b681215dd976000e3fbedc2bcc4d52db81af0416b67062a144ae64c1d\
-    07e31bebf6b95b0eba9f9601facc530eb90bdce0534a9bceab23032a31 \f$
+    В данной реализации \f$ modulo = 0xd189a6906dd8bb9d48b536cb299c0589a7f6730ef5de1b85649054c5f5404\
+    a34f5f75dec78d381a2e784c563c3600e19e179b3c3d211e18849aac98dc1c8c6a9 \f$
 
     Далее, последовательность внутренних состояний преобразуется в выходную последовательность
     бит по следующему правилу: \f$ \gamma_n = x_n \pmod{2}. \f$
@@ -298,11 +298,11 @@ int ak_random_create_bbs( ak_random generator )
 
     //Установим модуль генератора:
     ak_mpzn_set_hexstr( (( ak_random_bbs ) ( generator -> data )) -> modulo, ak_mpzn512_size,
-                        "aca1fb919a0d8b681215dd976000e3fbedc2bcc4d52db81af0416b67062a144ae64c1d07e31bebf6b95b0eba9f9601facc530eb90bdce0534a9bceab23032a31" );
+                        "d189a6906dd8bb9d48b536cb299c0589a7f6730ef5de1b85649054c5f5404a34f5f75dec78d381a2e784c563c3600e19e179b3c3d211e18849aac98dc1c8c6a9" );
     //Установим базовое начальное значение и величину n0:
     ak_mpzn_set_hexstr( (( ak_random_bbs ) ( generator -> data )) -> x0mon, ak_mpzn512_size,
-                        "2c6db990a757c41270b9b6bc1d6f432ebc8fd68e2cdd54dc73bb0fa93ca9d6e81841c52175e52871369ddf9fa8d4bae58edb607f31952b2c655ad2dfb71df9b4" );
-    (( ak_random_bbs ) ( generator -> data )) -> n0 = 6455409880403415343ULL;
+                        "6d0c34120c5f8aa83ffba93738056bc3ac5129c6a26d2908ef271377df94a565cb8c17e21e5b4ff5fc1d7d85cc053ee51f7f3db11b3eec8fbb138a9fe891d917" );
+    (( ak_random_bbs ) ( generator -> data )) -> n0 = 17902823698135302759ULL;
 
     //Сгенерируем случайный ak_uint64 (можно задать инициализатор любой длины, кратной байту и не большей 512 бит),
     //который зададим в качестве инициализатора начального значения:
