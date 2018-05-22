@@ -71,7 +71,8 @@ set( SOURCES        source/ak_log.c
                     source/ak_mpzn.c
                     source/ak_curves.c
                     source/ak_sign.c
-                    source/ak_sha2.c
+                    source/ak_sha256.c
+                    source/ak_sha512.c
 )
 
 set( DOCS           doc/libakrypt.dox
@@ -175,6 +176,7 @@ set( EXAMPLES_LIST hello
                    oid
                    hash
                    hash-oids
+                   sha2
 )
 
 # организуем сборку примеров со статической линковкой

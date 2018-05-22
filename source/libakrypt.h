@@ -301,7 +301,19 @@
    /*! \brief вычисление электронной подписи */
      signify,
    /*! \brief проверка электронной подписи */
-     verify
+     verify,
+   /*! \brief алгоритм хэширования SHA-224 (SHA-2) */
+     sha224,
+   /*! \brief алгоритм хэширования SHA-256 (SHA-2) */
+     sha256,
+   /*! \brief алгоритм хэширования SHA-384 (SHA-2) */
+     sha384,
+   /*! \brief алгоритм хэширования SHA-512 (SHA-2) */
+     sha512,
+   /*! \brief алгоритм хэширования SHA-512/256 (SHA-2) */
+     sha512_256,
+   /*! \brief алгоритм хэширования SHA-512/224 (SHA-2) */
+     sha512_224
 } ak_oid_mode;
 
 /* ----------------------------------------------------------------------------------------------- */
@@ -469,6 +481,18 @@
  dll_export ak_handle ak_hash_new_gosthash94( ak_handle );
 /*! \brief Создание дескриптора функции хеширования ГОСТ Р 34.11-94 с таблицами замен из CSP. */
  dll_export ak_handle ak_hash_new_gosthash94_csp( void );
+/*! \brief Создание дескриптора функции хеширования SHA-224 (SHA-2). */
+ dll_export ak_handle ak_hash_new_sha224( void );
+/*! \brief Создание дескриптора функции хеширования SHA-256 (SHA-2). */
+ dll_export ak_handle ak_hash_new_sha256( void );
+/*! \brief Создание дескриптора функции хеширования SHA-384 (SHA-2). */
+ dll_export ak_handle ak_hash_new_sha384( void );
+/*! \brief Создание дескриптора функции хеширования SHA-512 (SHA-2). */
+ dll_export ak_handle ak_hash_new_sha512( void );
+/*! \brief Создание дескриптора функции хеширования SHA-512/256 (SHA-2). */
+ dll_export ak_handle ak_hash_new_sha512_256( void );
+/*! \brief Создание дескриптора функции хеширования SHA-512/224 (SHA-2). */
+ dll_export ak_handle ak_hash_new_sha512_224( void );
 /*! \brief Создание дескриптора функции хеширования по ее OID. */
  dll_export ak_handle ak_hash_new_oid( ak_handle );
 /*! \brief Получение длины хешкода для заданной функции хеширования (в байтах). */
