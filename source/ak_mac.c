@@ -74,6 +74,20 @@
            ak_error_message( error, __func__ , "incorrect destroying hash function of mac context" );
          break;
 
+  case type_omac_acpkm:
+         if(( error = ak_bckey_destroy( &mac->choice._omac_acpkm.key )) != ak_error_ok )
+           ak_error_message( error, __func__,
+                                          "incorrect destroying secret master key of omac context" );
+         if(( error = ak_skey_destroy( &mac->choice._omac_acpkm.key_e )) != ak_error_ok )
+           ak_error_message( error, __func__,
+                                       "incorrect destroying secret temporary key of omac context" );
+         mac->choice._omac_acpkm.change_period = 0;
+         mac->choice._omac_acpkm.section_size = 0;
+         mac->choice._omac_acpkm.blocks_n = 0;
+         free( mac->choice._omac_acpkm.tmp_ptr );
+         free( mac->choice._omac_acpkm.k_ptr );
+         break;
+
    case type_block_cipher:
          break;
 
@@ -118,6 +132,7 @@
    case type_hmac:  return ( ak_skey ) &mac->choice._hmac.key; break;
    case type_block_cipher: return ( ak_skey ) &mac->choice._bckey.key; break;
    case type_signify:  return ( ak_skey ) &mac->choice._signkey.key; break;
+   case type_omac_acpkm: return ( ak_skey ) &mac->choice._omac_acpkm.key.key; break;
    default:
      ak_error_message( ak_error_undefined_value, __func__,
                                                    "using undefined type of mac secret key" );
@@ -260,13 +275,18 @@
 
   if( mac == NULL ) return ak_error_message( ak_error_null_pointer, __func__,
                                                        "using a null pointer to mac key context" );
-  if( ptr == NULL ) return  ak_error_message( ak_error_null_pointer, __func__,
+  if( ptr == NULL ) return ak_error_message( ak_error_null_pointer, __func__,
                                                     "using a null pointer to constant key value" );
  /* присваиваем ключевой буффер */
-  if(( error =
-      ak_skey_set_ptr( ak_mac_context_get_secret_key( mac ),
-                                 ptr, ak_min( size, mac->bsize ), ak_true )) != ak_error_ok )
-    return ak_error_message( error, __func__ , "incorrect assigning of key data" );
+  if( mac->type == type_omac_acpkm ) {
+    if(( error = ak_skey_set_ptr( ak_mac_context_get_secret_key( mac ), ptr, size,
+                                                                          ak_true )) != ak_error_ok )
+      return ak_error_message( error, __func__, "incorrect assigning of key data" );
+    if( mac->choice._omac_acpkm.key.ivector.size == 16 )
+      mac->choice._omac_acpkm.key.schedule_keys( &mac->choice._omac_acpkm.key.key );
+  } else if(( error = ak_skey_set_ptr( ak_mac_context_get_secret_key( mac ), ptr,
+                                              ak_min( size, mac->bsize ), ak_true )) != ak_error_ok )
+           return ak_error_message( error, __func__, "incorrect assigning of key data" );
 
  return error;
 }
@@ -345,6 +365,8 @@
   if(( error = ak_skey_set_password( ak_mac_context_get_secret_key( mac ),
                                                 pass, pass_size, salt, salt_size )) != ak_error_ok )
     return ak_error_message( error, __func__ , "incorrect generation of secret key random value" );
+  if( mac->type == type_omac_acpkm && mac->choice._omac_acpkm.key.ivector.size == 16 )
+    mac->choice._omac_acpkm.key.schedule_keys( &mac->choice._omac_acpkm.key.key );
 
  return error;
 }

@@ -265,6 +265,74 @@
 }
 
 /* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция реализует развертку ключей для алгоритма Кузнечик без выделения памяти.         */
+/* ----------------------------------------------------------------------------------------------- */
+ void ak_kuznechik_schedule_keys_without_allocation( ak_skey skey )
+{
+  ak_uint128 a0, a1, c, t;
+  struct kuznechik_expanded_keys *ekey = NULL, *mkey = NULL;
+  struct kuznechik_expanded_keys *dkey = NULL, *xkey = NULL;
+  int i = 0, j = 0, l = 0, idx = 0, kdx = 1;
+
+ /* получаем указатели на области памяти */
+  ekey = &(( struct kuznechik_ctx * ) skey->data )->encryptkey;
+  mkey = &(( struct kuznechik_ctx * ) skey->data )->encryptmask;
+  dkey = &(( struct kuznechik_ctx * ) skey->data )->decryptkey;
+  xkey = &(( struct kuznechik_ctx * ) skey->data )->decryptmask;
+
+ /* вырабатываем маски */
+  skey->generator.random( &skey->generator, mkey, sizeof( struct kuznechik_expanded_keys ));
+  skey->generator.random( &skey->generator, xkey, sizeof( struct kuznechik_expanded_keys ));
+
+ /* только теперь выполняем алгоритм развертки ключа */
+  a0.q[0] = (( ak_uint128 *) skey->key.data )[0].q[0] ^ (( ak_uint128 *) skey->mask.data )[0].q[0];
+  a0.q[1] = (( ak_uint128 *) skey->key.data )[0].q[1] ^ (( ak_uint128 *) skey->mask.data )[0].q[1];
+  a1.q[0] = (( ak_uint128 *) skey->key.data )[1].q[0] ^ (( ak_uint128 *) skey->mask.data )[1].q[0];
+  a1.q[1] = (( ak_uint128 *) skey->key.data )[1].q[1] ^ (( ak_uint128 *) skey->mask.data )[1].q[1];
+
+  ekey->k[0].q[0] = a1.q[0]^mkey->k[0].q[0];
+  dkey->k[0].q[0] = a1.q[0]^xkey->k[0].q[0];
+
+  ekey->k[0].q[1] = a1.q[1]^mkey->k[0].q[1];
+  dkey->k[0].q[1] = a1.q[1]^xkey->k[0].q[1];
+
+  ekey->k[1].q[0] = a0.q[0]^mkey->k[1].q[0];
+  ekey->k[1].q[1] = a0.q[1]^mkey->k[1].q[1];
+
+  ak_kuznechik_matrix_mul_vector( Linv, &a0, &dkey->k[1] );
+  dkey->k[1].q[0] ^= xkey->k[1].q[0]; dkey->k[1].q[1] ^= xkey->k[1].q[1];
+
+  for( j = 0; j < 4; j++ ) {
+     for( i = 0; i < 8; i++ ) {
+        c.q[0] = ++idx; /* вычисляем константу алгоритма согласно ГОСТ Р 34.12-2015 */
+        c.q[1] = 0;
+        ak_kuznechik_linear_steps( &c );
+
+        t.q[0] = a1.q[0] ^ c.q[0]; t.q[1] = a1.q[1] ^ c.q[1];
+        for( l = 0; l < 16; l++ ) t.b[l] = gost_pi[t.b[l]];
+        ak_kuznechik_linear_steps( &t );
+
+        t.q[0] ^= a0.q[0]; t.q[1] ^= a0.q[1];
+        a0.q[0] = a1.q[0]; a0.q[1] = a1.q[1];
+        a1.q[0] = t.q[0];  a1.q[1] = t.q[1];
+     }
+     kdx++;
+     ekey->k[kdx].q[0] = a1.q[0]^mkey->k[kdx].q[0];
+     ekey->k[kdx].q[1] = a1.q[1]^mkey->k[kdx].q[1];
+     ak_kuznechik_matrix_mul_vector( Linv, &a1, &dkey->k[kdx] );
+     dkey->k[kdx].q[0] ^= xkey->k[kdx].q[0];
+     dkey->k[kdx].q[1] ^= xkey->k[kdx].q[1];
+
+     kdx++;
+     ekey->k[kdx].q[0] = a0.q[0]^mkey->k[kdx].q[0];
+     ekey->k[kdx].q[1] = a0.q[1]^mkey->k[kdx].q[1];
+     ak_kuznechik_matrix_mul_vector( Linv, &a0, &dkey->k[kdx] );
+     dkey->k[kdx].q[0] ^= xkey->k[kdx].q[0];
+     dkey->k[kdx].q[1] ^= xkey->k[kdx].q[1];
+  }
+}
+
+/* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция изменяет маску ключа алгоритма блочного шифрования Кузнечик.                    */
 /* ----------------------------------------------------------------------------------------------- */
  static int ak_kuznechik_remask_xor( ak_skey skey )
@@ -415,6 +483,113 @@
      x.q[0] = t;
   }
   x.q[0] ^= ekey->k[9].q[0]; x.q[1] ^= ekey->k[9].q[1];
+  ((ak_uint64 *)out)[0] = x.q[0] ^ mkey->k[9].q[0];
+  ((ak_uint64 *)out)[1] = x.q[1] ^ mkey->k[9].q[1];
+
+#endif
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Функция реализует алгоритм зашифрования одного блока информации
+    шифром Кузнечик (согласно ГОСТ Р 34.12-2015) с наложением маски.                               */
+/* ----------------------------------------------------------------------------------------------- */
+ void ak_kuznechik_encrypt_acpkm_with_mask( ak_skey skey, ak_pointer in, ak_pointer out,
+                                                                                    ak_pointer mask )
+{
+  int i = 0;
+  struct kuznechik_expanded_keys *ekey = &(( struct kuznechik_ctx * ) skey->data )->encryptkey;
+  struct kuznechik_expanded_keys *mkey = &(( struct kuznechik_ctx * ) skey->data )->encryptmask;
+
+#ifdef LIBAKRYPT_KUZNECHIK_M128
+  __m128i z, x = *((__m128i *) in);
+
+  for( i = 0; i < 9; i++ ) {
+   #ifdef LIBAKRYPT_HAVE_BUILTIN_SET_EPI64X
+     x = _mm_xor_si128( x, _mm_set_epi64x( ekey->k[i].q[1], ekey->k[i].q[0] ));
+     x = _mm_xor_si128( x, _mm_set_epi64x( mkey->k[i].q[1], mkey->k[i].q[0] ));
+   #else
+     z.m128i_u64[0] = ekey->k[i].q[0]; z.m128i_u64[1] = ekey->k[i].q[1]; x = _mm_xor_si128( x, z );
+     z.m128i_u64[0] = mkey->k[i].q[0]; z.m128i_u64[1] = mkey->k[i].q[1]; x = _mm_xor_si128( x, z );
+   #endif
+
+     z = kuz_mat_enc128[ 0][((ak_uint8 *) &x)[ 0]];
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 1][((ak_uint8 *) &x)[ 1]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 2][((ak_uint8 *) &x)[ 2]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 3][((ak_uint8 *) &x)[ 3]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 4][((ak_uint8 *) &x)[ 4]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 5][((ak_uint8 *) &x)[ 5]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 6][((ak_uint8 *) &x)[ 6]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 7][((ak_uint8 *) &x)[ 7]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 8][((ak_uint8 *) &x)[ 8]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[ 9][((ak_uint8 *) &x)[ 9]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[10][((ak_uint8 *) &x)[10]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[11][((ak_uint8 *) &x)[11]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[12][((ak_uint8 *) &x)[12]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[13][((ak_uint8 *) &x)[13]]);
+     z = _mm_xor_si128( z, kuz_mat_enc128[14][((ak_uint8 *) &x)[14]]);
+     x = _mm_xor_si128( z, kuz_mat_enc128[15][((ak_uint8 *) &x)[15]]);
+  }
+
+  x = _mm_xor_si128( x, *(__m128i *)mask);
+
+ #ifdef LIBAKRYPT_HAVE_BUILTIN_SET_EPI64X
+  x = _mm_xor_si128( x, _mm_set_epi64x( ekey->k[9].q[1], ekey->k[9].q[0] ));
+  *((__m128i *) out) = _mm_xor_si128( x, _mm_set_epi64x( mkey->k[9].q[1], mkey->k[9].q[0] ));
+ #else
+  z.m128i_u64[0] = ekey->k[9].q[0]; z.m128i_u64[1] = ekey->k[9].q[1]; x = _mm_xor_si128( x, z );
+  z.m128i_u64[0] = mkey->k[9].q[0]; z.m128i_u64[1] = mkey->k[9].q[1];
+  *((__m128i *) out) = _mm_xor_si128( x, z );
+ #endif
+
+#else
+  ak_uint64 t;
+  ak_uint128 x;
+  x.q[0] = (( ak_uint64 *) in)[0]; x.q[1] = (( ak_uint64 *) in)[1];
+
+  for( i = 0; i < 9; i++ ) {
+     x.q[0] ^= ekey->k[i].q[0]; x.q[0] ^= mkey->k[i].q[0];
+     x.q[1] ^= ekey->k[i].q[1]; x.q[1] ^= mkey->k[i].q[1];
+
+     t = kuz_mat_enc128[ 0][x.b[ 0]].q[0] ^
+         kuz_mat_enc128[ 1][x.b[ 1]].q[0] ^
+         kuz_mat_enc128[ 2][x.b[ 2]].q[0] ^
+         kuz_mat_enc128[ 3][x.b[ 3]].q[0] ^
+         kuz_mat_enc128[ 4][x.b[ 4]].q[0] ^
+         kuz_mat_enc128[ 5][x.b[ 5]].q[0] ^
+         kuz_mat_enc128[ 6][x.b[ 6]].q[0] ^
+         kuz_mat_enc128[ 7][x.b[ 7]].q[0] ^
+         kuz_mat_enc128[ 8][x.b[ 8]].q[0] ^
+         kuz_mat_enc128[ 9][x.b[ 9]].q[0] ^
+         kuz_mat_enc128[10][x.b[10]].q[0] ^
+         kuz_mat_enc128[11][x.b[11]].q[0] ^
+         kuz_mat_enc128[12][x.b[12]].q[0] ^
+         kuz_mat_enc128[13][x.b[13]].q[0] ^
+         kuz_mat_enc128[14][x.b[14]].q[0] ^
+         kuz_mat_enc128[15][x.b[15]].q[0];
+
+     x.q[1] = kuz_mat_enc128[ 0][x.b[ 0]].q[1] ^
+         kuz_mat_enc128[ 1][x.b[ 1]].q[1] ^
+         kuz_mat_enc128[ 2][x.b[ 2]].q[1] ^
+         kuz_mat_enc128[ 3][x.b[ 3]].q[1] ^
+         kuz_mat_enc128[ 4][x.b[ 4]].q[1] ^
+         kuz_mat_enc128[ 5][x.b[ 5]].q[1] ^
+         kuz_mat_enc128[ 6][x.b[ 6]].q[1] ^
+         kuz_mat_enc128[ 7][x.b[ 7]].q[1] ^
+         kuz_mat_enc128[ 8][x.b[ 8]].q[1] ^
+         kuz_mat_enc128[ 9][x.b[ 9]].q[1] ^
+         kuz_mat_enc128[10][x.b[10]].q[1] ^
+         kuz_mat_enc128[11][x.b[11]].q[1] ^
+         kuz_mat_enc128[12][x.b[12]].q[1] ^
+         kuz_mat_enc128[13][x.b[13]].q[1] ^
+         kuz_mat_enc128[14][x.b[14]].q[1] ^
+         kuz_mat_enc128[15][x.b[15]].q[1];
+     x.q[0] = t;
+  }
+  x.q[0] ^= ekey->k[9].q[0]; x.q[1] ^= ekey->k[9].q[1];
+
+  x.q[0] ^= ((ak_uint64 *)mask)[0];
+  x.q[1] ^= ((ak_uint64 *)mask)[1];
+
   ((ak_uint64 *)out)[0] = x.q[0] ^ mkey->k[9].q[0];
   ((ak_uint64 *)out)[1] = x.q[1] ^ mkey->k[9].q[1];
 
@@ -611,7 +786,21 @@
     0x40bda1b8, 0xd57b5fa2, 0xc10ed1db, 0xf195d8be, 0x3c45dee4, 0xf33ce4b3, 0xf6a13e5d, 0x85eee733,
     0x3564a3a5, 0xd5e877f1, 0xe6356ed3, 0xa5eae88b, 0x20bdba73, 0xd1c6d158, 0xf20cbab6, 0xcb91fab1 };
 
-  ak_uint8 myout[64];
+ /* открытый текст CTR-ACPKM, приложение А.2 */
+  ak_uint32 ctr_acpkm_in[28] = {
+    0xbbaa9988, 0xffeeddcc, 0x55667700, 0x11223344, 0xcceeff0a, 0x8899aabb, 0x44556677, 0x00112233,
+    0xeeff0a00, 0x99aabbcc, 0x55667788, 0x11223344, 0xff0a0011, 0xaabbccee, 0x66778899, 0x22334455,
+    0x0a001122, 0xbbcceeff, 0x778899aa, 0x33445566, 0x00112233, 0xcceeff0a, 0x8899aabb, 0x44556677,
+    0x11223344, 0xeeff0a00, 0x99aabbcc, 0x55667788 };
+
+ /* результат зашифрования в режиме CTR-ACPKM */
+  ak_uint32 ctr_acpkm_out[28] = {
+    0x40bda1b8, 0xd57b5fa2, 0xc10ed1db, 0xf195d8be, 0x3c45dee4, 0xf33ce4b3, 0xf6a13e5d, 0x85eee733,
+    0x5e85e800, 0x00170627, 0x646f4c55, 0x4bceeb8f, 0xd0805046, 0x3e4834af, 0x68d09439, 0x587c4df5,
+    0x6b8a896e, 0x1cfc6c31, 0x86aeece1, 0xcf30f576, 0x3423163e, 0x0c4f3b74, 0x81363646, 0xdffd07ec,
+    0xfbd6de5d, 0x69d221e7, 0x82fac8d4, 0x6409a9c2 };
+
+  ak_uint8 myout[112];
 
  /* 1. Создаем контекст ключа алгоритма Кузнечик и устанавливаем значение ключа */
   if(( error = ak_bckey_create_kuznechik( &bkey )) != ak_error_ok ) {
@@ -714,6 +903,41 @@
   }
   if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                            "the counter mode decryption test from GOST R 34.13-2015 is Ok" );
+
+ /* 5. Тестируем режим CTR-ACPKM */
+  if(( error = ak_bckey_context_xcrypt_acpkm( &bkey, ctr_acpkm_in, myout, 112, ivctr, 8, 32 )) !=
+                                                                                      ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong ctr-acpkm mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, ctr_acpkm_out, 112 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                        "the ctr-acpkm mode encryption test is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 112, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( ctr_acpkm_out, 112, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                           "the ctr-acpkm mode encryption test is Ok" );
+
+  if(( error = ak_bckey_context_xcrypt_acpkm( &bkey, ctr_acpkm_out, myout, 112, ivctr, 8, 32 )) !=
+                                                                                      ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong ctr-acpkm mode decryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, ctr_acpkm_in, 112 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                        "the ctr-acpkm mode decryption test is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 112, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( ctr_acpkm_in, 112, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                           "the ctr-acpkm mode decryption test is Ok" );
 
  /* уничтожаем ключ и выходим */
   ak_bckey_destroy( &bkey );

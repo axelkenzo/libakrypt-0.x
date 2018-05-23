@@ -518,6 +518,18 @@
     return ak_false;
   }
 
+ /* тестируем алгоритм OMAC-ACPKM для Магмы */
+  if( ak_omac_acpkm_test_magma() != ak_true ) {
+    ak_error_message( ak_error_get_value(), __func__ , "incorrect omac testing" );
+    return ak_false;
+  }
+
+ /* тестируем алгоритм OMAC-ACPKM для Кузнечика */
+  if( ak_omac_acpkm_test_kuznechik() != ak_true ) {
+    ak_error_message( ak_error_get_value(), __func__ , "incorrect omac testing" );
+    return ak_false;
+  }
+
   if( audit >= ak_log_maximum )
    ak_error_message( ak_error_ok, __func__ , "testing mac functions ended successfully" );
 

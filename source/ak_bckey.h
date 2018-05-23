@@ -53,6 +53,8 @@
    struct skey key;
   /*! \brief Буффер, для хранения синхропосылки. Длина буффера совпадает с длиной блока */
    struct buffer ivector;
+  /*! \brief Указатель на внутренние данные ключа блочного алгоритма шифрования */
+   ak_pointer data;
   /*! \brief Функция заширования одного блока информации */
    ak_function_bckey *encrypt;
   /*! \brief Функция расширования одного блока информации */
@@ -94,11 +96,16 @@
  int ak_bckey_context_xcrypt( ak_bckey , ak_pointer , ak_pointer , size_t , ak_pointer , size_t );
 /*! \brief Дальнейшее зашифрование/расшифрование в режиме гаммирования из ГОСТ Р 34.13-2015. */
  int ak_bckey_context_xcrypt_update( ak_bckey , ak_pointer , ak_pointer , size_t );
+/*! \brief Зашифрование/расшифрование данных в режиме CTR-ACPKM. */
+ int ak_bckey_context_xcrypt_acpkm( ak_bckey , ak_pointer , ak_pointer , const size_t , ak_pointer ,
+                                                                       const size_t , const size_t );
+/*! \brief Дальнейшее зашифрование/расшифрование в режиме CTR-ACPKM. */
+ int ak_bckey_context_xcrypt_acpkm_update( ak_bckey , ak_pointer , ak_pointer , const size_t );
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Тестирование корректной работы алгоритма блочного шифрования Магма. */
  ak_bool ak_bckey_test_magma( void );
-/*! \brief Инициализация таблиц, необходимых для быстрой работы алгоритма блочного шифрования Кузнечик (ГОСТ Р 34.12-2015).                                                       */
+/*! \brief Инициализация таблиц, необходимых для быстрой работы алгоритма блочного шифрования Кузнечик (ГОСТ Р 34.12-2015). */
  ak_bool ak_bckey_init_kuznechik_tables( void );
 /*! \brief Тестирование корректной работы алгоритма блочного шифрования Кузнечик. */
  ak_bool ak_bckey_test_kuznechik( void );

@@ -39,6 +39,12 @@
   (ak_function_void *) ak_bckey_context_xcrypt /* обратное преобразование - расшифрование */
  };
 
+/*! Структура, сожержащая указатели на функции зашифрования/расшифрования в режиме CTR-ACPKM */
+ static struct two_pointers block_cipher_counter_acpkm_functions = {
+  (ak_function_void *) ak_bckey_context_xcrypt_acpkm, /* прямое преобразование - зашифрование */
+  (ak_function_void *) ak_bckey_context_xcrypt_acpkm /* обратное преобразование - расшифрование */
+ };
+
 /* ----------------------------------------------------------------------------------------------- */
 /*! Константные значения OID библиотеки */
  struct oid libakrypt_oids[] = {
@@ -85,6 +91,11 @@
    { mac_function, algorithm, "hmac-gosthash94", "1.2.643.2.52.1.4.1", NULL,
                                            (ak_function_void *) ak_mac_create_hmac_gosthash94_csp },
 
+   { mac_function, algorithm, "omac-acpkm-magma", "1.2.643.2.52.1.4.2", NULL,
+                                          (ak_function_void *) ak_mac_create_omac_acpkm_magma_csp },
+   { mac_function, algorithm, "omac-acpkm-kuznechik", "1.2.643.2.52.1.4.3", NULL,
+                                      (ak_function_void *) ak_mac_create_omac_acpkm_kuznechik_csp },
+
   /* 6. идентификаторы алгоритмов блочного шифрования
         в дереве библиотеки: 1.2.643.2.52.1.6 - алгоритмы блочного шифрования
         в дереве библиотеки: 1.2.643.2.52.1.7 - параметры алгоритмов блочного шифрования */
@@ -99,11 +110,12 @@
    { block_cipher, ecb, "ecb", "1.2.643.2.52.1.8.1", NULL, NULL },
    { block_cipher, counter, "counter", "1.2.643.2.52.1.8.2",
                                                (ak_pointer )&block_cipher_counter_functions, NULL },
-
    // { block_cipher, cfb, "cfb", "1.2.643.2.52.1.8.3", NULL, NULL },
    // { block_cipher, cbc, "cbc", "1.2.643.2.52.1.8.4", NULL, NULL },
    // { block_cipher, ofb, "ofb", "1.2.643.2.52.1.8.5", NULL, NULL },
    // { block_cipher, xts, "xts", "1.2.643.2.52.1.8.6", NULL, NULL },
+   { block_cipher, ctr_acpkm, "ctr-acpkm", "1.2.643.2.52.1.8.7",
+                                          (ak_pointer)&block_cipher_counter_acpkm_functions, NULL },
 
   /* 10. идентификаторы алгоритмов выработки электронной подписи
         в дереве библиотеки: 1.2.643.2.52.1.10 - алгоритмы выработки электронной подписи */
@@ -548,6 +560,7 @@
    case ecb:             return "ecb mode";
    case ofb:             return "ofb mode";
    case counter:         return "counter mode";
+   case ctr_acpkm:       return "ctr-acpkm mode";
    case counter_gost:    return "gost28147-89 counter mode";
    case cfb:             return "cfb mode";
    case cbc:             return "cbc mode";

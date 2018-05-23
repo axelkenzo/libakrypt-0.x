@@ -27,6 +27,7 @@
 /*   ak_bckey.c                                                                                    */
 /* ----------------------------------------------------------------------------------------------- */
  #include <ak_bckey.h>
+ #include <ak_parameters.h>
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! Функция устанавливает параметры алгоритма блочного шифрования, передаваемые в качестве
@@ -78,6 +79,7 @@
   bkey->decrypt =       NULL;
   bkey->schedule_keys = NULL;
   bkey->delete_keys =   NULL;
+  bkey->data = NULL;
 
  return ak_error_ok;
 }
@@ -101,6 +103,10 @@
     ak_error_message( error, __func__, "wrong wiping a temporary vector");
   if(( error = ak_buffer_destroy( &bkey->ivector )) != ak_error_ok )
     ak_error_message( error, __func__, "wrong destroying a temporary vector" );
+  if( bkey->data != NULL ) {
+    free( bkey->data );
+    bkey->data = NULL;
+  }
   if(( error = ak_skey_destroy( &bkey->key )) != ak_error_ok )
     ak_error_message( error, __func__, "wrong destroying a secret key" );
 
@@ -509,6 +515,652 @@
  /* перемаскируем ключ */
   if( bkey->key.remask( &bkey->key ) != ak_error_ok )
     return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+ return ak_error_ok;
+}
+
+/* предварительные описания функций, используемых в ak_bckey_context_xcrypt_acpkm
+   и ak_bckey_context_xcrypt_acpkm_update */
+ void ak_magma_encrypt_acpkm_with_mask( ak_skey , ak_pointer , ak_pointer , ak_pointer );
+ void ak_kuznechik_encrypt_acpkm_with_mask( ak_skey , ak_pointer , ak_pointer , ak_pointer );
+ void ak_kuznechik_schedule_keys_without_allocation( ak_skey );
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Структура, предназначенная для режима CTR-ACPKM */
+ struct acpkm {
+  /*! \brief Размер всей структуры */
+   ak_uint64 size;
+  /*! \brief Количество блоков в секции */
+   ak_int64 amount;
+  /*! \brief Позиция внутри секции */
+   ak_int64 counter;
+  /*! \brief Ключ */
+   ak_uint8 key[32];
+  /*! \brief Раундовые ключи Кузнечика */
+   ak_uint64 expanded_keys[];
+};
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Поскольку операцией заширования является гаммирование (сложение открытого текста по модулю два
+    с последовательностью, вырабатываемой шифром), то операция расшифрования производится также
+    наложением гаммы по модулю два. Таким образом, для зашифрования и расшифрования
+    информациии используется одна и таже функция.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование/расшифрование
+    информации.
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные.
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in).
+    @param size Размер зашировываемых данных (в байтах).
+    @param iv Синхропосылка. Согласно  стандарту ГОСТ Р 34.13-2015 длина синхропосылки должна быть
+    ровно в два раза меньше, чем длина блока, то есть 4 байта для Магмы и 8 байт для Кузнечика.
+    @param iv_size Длина синхропосылки (в байтах).
+    @param n_size Длина секции (в байтах).
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+ int ak_bckey_context_xcrypt_acpkm( ak_bckey bkey, ak_pointer in, ak_pointer out, const size_t size,
+                                                                ak_pointer iv, const size_t iv_size,
+                                                                                const size_t n_size )
+{
+  ak_int64 blocks = (ak_int64)size/bkey->ivector.size,
+            tail = (ak_int64)size%bkey->ivector.size,
+            amount = (ak_int64)n_size/bkey->ivector.size,
+            counter;
+  size_t i;
+  ak_uint64 yaout[4], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+  ak_pointer key_data[2] = { bkey->key.key.data, bkey->key.data };
+
+ /* проверяем целостность ключа */
+  if( bkey->key.check_icode( &bkey->key ) != ak_true )
+    return ak_error_message( ak_error_wrong_key_icode, __func__,
+                                                    "incorrect integrity code of secret key value" );
+ /* проверяем длину синхропосылки (если меньше половины блока, то плохо,
+    если больше - то лишнее не используется) */
+  if( iv_size < ( bkey->ivector.size >> 1 ))
+    return ak_error_message( ak_error_wrong_iv_length, __func__,
+                                                               "incorrect length of initial value" );
+ /* проверяем длину секции на кратность длине блока */
+  if( (ak_int64)n_size%bkey->ivector.size != 0 )
+    return ak_error_message( ak_error_wrong_length, __func__, "incorrect length of section value" );
+ /* уменьшаем значение ресурса ключа */
+  counter = ak_min( blocks + (tail > 0), amount );
+  if( bkey->key.resource.counter < counter )
+    return ak_error_message( ak_error_low_key_resource,
+                                                      __func__, "low resource of block cipher key" );
+   else bkey->key.resource.counter -= counter; /* уменьшаем ресурс ключа */
+ /* выставляем флаг уменьшения ресурса ключа в xcrypt_acpkm_update */
+  if( !tail && counter < amount )
+    bkey->key.flags |= ak_flag_xcrypt_acpkm_resource;
+
+ /* создаем буфер для хранения преобразованного ключа */
+  if( bkey->data != NULL ) {
+    ak_ptr_wipe( bkey->data, ((struct acpkm *)bkey->data)->size, &bkey->key.generator );
+    free( bkey->data );
+  }
+  if( bkey->ivector.size == 8 ) {
+    bkey->data = malloc( 56 );
+    ((struct acpkm *)bkey->data)->size = 56;
+  }
+  if( bkey->ivector.size == 16 ) {
+   /* выделяем память с учетом раундовых ключей */
+    bkey->data =
+#ifdef LIBAKRYPT_HAVE_STDALIGN
+    aligned_alloc( 16,
+#else
+    malloc(
+#endif
+    704 );
+    ((struct acpkm *)bkey->data)->size = 704;
+   /* копируем раундовые ключи */
+    memcpy( ((struct acpkm *)bkey->data)->expanded_keys + 1, bkey->key.data, 640 );
+   /* меняем место нахождения раундовых ключей */
+    bkey->key.data = ((struct acpkm *)bkey->data)->expanded_keys + 1;
+  }
+ /* копируем исходный ключ */
+  memcpy( ((struct acpkm *)bkey->data)->key, bkey->key.key.data, 32 );
+ /* меняем указатель, где хранится ключ */
+  bkey->key.key.data = ((struct acpkm *)bkey->data)->key;
+
+ /* теперь приступаем к зашифрованию данных */
+  if( bkey->key.flags&ak_flag_xcrypt_acpkm_update )
+    bkey->key.flags ^= ak_flag_xcrypt_acpkm_update;
+  counter = 0;
+  memset( bkey->ivector.data, 0, bkey->ivector.size );
+
+  if( blocks ) {
+   /* здесь длина блока равна 64 бита */
+    if( bkey->ivector.size == 8 ) {
+      memcpy( ((ak_uint8 *)bkey->ivector.data)+4, iv, 4 );
+      do {
+          if( counter == amount ) { /* преобразование ключа ACPKM */
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[8], &yaout[1],
+                                                               (ak_uint8 *)bkey->key.mask.data + 8 );
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[24], &yaout[3],
+                                                              (ak_uint8 *)bkey->key.mask.data + 24 );
+            memcpy( bkey->key.key.data, yaout, 32 );
+           /* зачищаем значение ключа, которое больше не нужно */
+            ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+            counter = 0;
+          }
+          bkey->encrypt( &bkey->key, bkey->ivector.data, yaout );
+          *outptr = *inptr ^ yaout[0];
+          outptr++; inptr++; ((ak_uint64 *)bkey->ivector.data)[0]++;
+          counter++;
+      } while( --blocks > 0 );
+    }
+
+   /* здесь длина блока равна 128 бит */
+    if( bkey->ivector.size == 16 ) {
+      memcpy( ((ak_uint8 *)bkey->ivector.data)+8, iv, 8 );
+      do {
+          if( counter == amount ) { /* преобразование ключа ACPKM */
+            ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+            ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+            memcpy( bkey->key.key.data, yaout, 32 );
+           /* зачищаем значение ключа, которое больше не нужно */
+            ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+            ak_kuznechik_schedule_keys_without_allocation( &bkey->key );
+            counter = 0;
+          }
+          bkey->encrypt( &bkey->key, bkey->ivector.data, yaout );
+          *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+          *outptr = *inptr ^ yaout[1]; outptr++; inptr++;
+          ((ak_uint64 *)bkey->ivector.data)[0]++;
+          counter++;
+      } while( --blocks > 0 );
+    }
+  }
+
+  if( tail ) { /* напоследок, мы обрабатываем хвост сообщения */
+    /* преобразование ключа ACPKM */
+    if( counter == amount ) {
+      if( bkey->ivector.size == 8 ) {
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[8], &yaout[1],
+                                                               (ak_uint8 *)bkey->key.mask.data + 8 );
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[24], &yaout[3],
+                                                              (ak_uint8 *)bkey->key.mask.data + 24 );
+        memcpy( bkey->key.key.data, yaout, 32 );
+       /* зачищаем значение ключа, которое больше не нужно */
+        ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+        counter = 0;
+      }
+      if( bkey->ivector.size == 16 ) {
+        ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+        ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+        memcpy( bkey->key.key.data, yaout, 32 );
+       /* зачищаем значение ключа, которое больше не нужно */
+        ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+        ak_kuznechik_schedule_keys_without_allocation( &bkey->key );
+        counter = 0;
+      }
+    }
+    bkey->encrypt( &bkey->key, bkey->ivector.data, yaout );
+    for( i = 0; i < tail; i++ )
+        ((ak_uint8 *)outptr)[i] = ((ak_uint8 *)inptr)[i]^((ak_uint8 *)yaout)[i];
+
+   /* запрещаем дальнейшее использование xcrypt_acpkm_update для данных, длина которых не кратна
+      длине блока */
+    memset( bkey->ivector.data, 0, bkey->ivector.size );
+    bkey->key.flags |= ak_flag_xcrypt_acpkm_update;
+   /* восстанавливаем исходные значения ключей и удаляем буфер */
+    bkey->key.key.data = key_data[0];
+    bkey->key.data = key_data[1];
+    ak_ptr_wipe( bkey->data, ((struct acpkm *)bkey->data)->size, &bkey->key.generator );
+    free( bkey->data );
+   /* перемаскируем ключ */
+    bkey->key.remask( &bkey->key );
+  } else {
+          /* перемаскируем ключи */
+           if( bkey->ivector.size == 8 ) {
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)key_data[0])[i] += ((ak_uint32 *)bkey->key.key.data)[i];
+               ((ak_uint32 *)key_data[0])[i] -= ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)key_data[0])[i] -= ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)bkey->key.key.data)[i] += ((ak_uint32 *)key_data[0])[i];
+             }
+             bkey->key.remask( &bkey->key );
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)bkey->key.key.data)[i] -= ((ak_uint32 *)key_data[0])[i];
+               ((ak_uint32 *)key_data[0])[i] += ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)key_data[0])[i] += ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)key_data[0])[i] -= ((ak_uint32 *)bkey->key.key.data)[i];
+             }
+           }
+           if( bkey->ivector.size == 16 ) {
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)key_data[0])[i] ^= ((ak_uint32 *)bkey->key.key.data)[i];
+               ((ak_uint32 *)bkey->key.key.data)[i] ^= ((ak_uint32 *)key_data[0])[i];
+             }
+             bkey->key.remask( &bkey->key );
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)bkey->key.key.data)[i] ^= ((ak_uint32 *)key_data[0])[i];
+               ((ak_uint32 *)key_data[0])[i] ^= ((ak_uint32 *)bkey->key.key.data)[i];
+             }
+           }
+          /* восстанавливаем исходные значения ключей и записываем данные, необходимые
+             для xcrypt_acpkm_update */
+           bkey->key.key.data = key_data[0];
+           bkey->key.data = key_data[1];
+           ((struct acpkm *)bkey->data)->amount = amount;
+           ((struct acpkm *)bkey->data)->counter = counter;
+         }
+
+ return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Функция позволяет зашифровывать/расшифровывать данные после вызова функции ak_bckey_xcrypt_acpkm()
+    со значением синхропосылки, выработанной в ходе предыдущего вызова. Это позволяет
+    зашифровывать/расшифровывать данные поступающие блоками, длина которых кратна длине блока
+    используемого алгоритма блочного шифрования.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование информации
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in)
+    @param size Размер зашировываемых данных (в байтах)
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+ int ak_bckey_context_xcrypt_acpkm_update( ak_bckey bkey, ak_pointer in, ak_pointer out,
+                                                                                  const size_t size )
+{
+  ak_int64 blocks = (ak_int64)size/bkey->ivector.size,
+            tail = (ak_int64)size%bkey->ivector.size;
+  size_t i;
+  ak_uint64 yaout[4], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+  struct acpkm *data_ptr = (struct acpkm *)bkey->data;
+  ak_pointer key_data[2] = { bkey->key.key.data, bkey->key.data };
+
+ /* проверяем, что мы можем использовать данный режим */
+  if( bkey->key.flags&ak_flag_xcrypt_acpkm_update || bkey->data == NULL )
+    return ak_error_message( ak_error_wrong_block_cipher_function, __func__,
+                            "using this function with previously incorrect xcrypt_acpkm operation" );
+ /* проверяем целостность ключа */
+  if( bkey->key.check_icode( &bkey->key ) != ak_true )
+    return ak_error_message( ak_error_wrong_key_icode, __func__,
+                                                    "incorrect integrity code of secret key value" );
+ /* уменьшаем значение ресурса ключа */
+  if( bkey->key.flags&ak_flag_xcrypt_acpkm_resource ) {
+    ak_int64 counter = ak_min( blocks + (tail > 0), data_ptr->amount - data_ptr->counter );
+    if( bkey->key.resource.counter < counter )
+      return ak_error_message( ak_error_low_key_resource,
+                                                      __func__, "low resource of block cipher key" );
+     else bkey->key.resource.counter -= counter; /* уменьшаем ресурс ключа */
+    if( counter == data_ptr->amount - data_ptr->counter )
+      bkey->key.flags ^= ak_flag_xcrypt_acpkm_resource;
+  }
+
+ /* меняем указатели, где хранятся ключи */
+  bkey->key.key.data = data_ptr->key;
+  bkey->key.data = data_ptr->expanded_keys + 1;
+
+ /* теперь приступаем к зашифрованию данных */
+  if( blocks ) {
+   /* здесь длина блока равна 64 бита */
+    if( bkey->ivector.size == 8 ) {
+      do {
+          if( data_ptr->counter == data_ptr->amount ) { /* преобразование ключа ACPKM */
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[8], &yaout[1], 
+                                                               (ak_uint8 *)bkey->key.mask.data + 8 );
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+            ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[24], &yaout[3],
+                                                              (ak_uint8 *)bkey->key.mask.data + 24 );
+            memcpy( bkey->key.key.data, yaout, 32 );
+           /* зачищаем значение ключа, которое больше не нужно */
+            ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+            data_ptr->counter = 0;
+          }
+          bkey->encrypt( &bkey->key, bkey->ivector.data, yaout );
+          *outptr = *inptr ^ yaout[0];
+          outptr++; inptr++; ((ak_uint64 *)bkey->ivector.data)[0]++;
+          data_ptr->counter++;
+      } while( --blocks > 0 );
+    }
+
+   /* здесь длина блока равна 128 бит */
+    if( bkey->ivector.size == 16 ) {
+      do {
+          if( data_ptr->counter == data_ptr->amount ) { /* преобразование ключа ACPKM */
+            ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+            ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+            memcpy( bkey->key.key.data, yaout, 32 );
+           /* зачищаем значение ключа, которое больше не нужно */
+            ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+            ak_kuznechik_schedule_keys_without_allocation( &bkey->key );
+            data_ptr->counter = 0;
+          }
+          bkey->encrypt( &bkey->key, bkey->ivector.data, yaout );
+          *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+          *outptr = *inptr ^ yaout[1]; outptr++; inptr++;
+          ((ak_uint64 *)bkey->ivector.data)[0]++;
+          data_ptr->counter++;
+      } while( --blocks > 0 );
+    }
+  }
+
+  if( tail ) { /* напоследок, мы обрабатываем хвост сообщения */
+    /* преобразование ключа ACPKM */
+    if( data_ptr->counter == data_ptr->amount ) {
+      if( bkey->ivector.size == 8 ) {
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[8], &yaout[1],
+                                                               (ak_uint8 *)bkey->key.mask.data + 8 );
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+        ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[24], &yaout[3],
+                                                              (ak_uint8 *)bkey->key.mask.data + 24 );
+        memcpy( bkey->key.key.data, yaout, 32 );
+       /* зачищаем значение ключа, которое больше не нужно */
+        ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+        data_ptr->counter = 0;
+      }
+      if( bkey->ivector.size == 16 ) {
+        ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+        ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+        memcpy( bkey->key.key.data, yaout, 32 );
+       /* зачищаем значение ключа, которое больше не нужно */
+        ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+        ak_kuznechik_schedule_keys_without_allocation( &bkey->key );
+        data_ptr->counter = 0;
+      }
+    }
+    bkey->encrypt( &bkey->key, bkey->ivector.data, yaout );
+    for( i = 0; i < tail; i++ )
+        ((ak_uint8 *)outptr)[i] = ((ak_uint8 *)inptr)[i]^((ak_uint8 *)yaout)[i];
+
+   /* запрещаем дальнейшее использование xcrypt_acpkm_update для данных, длина которых не кратна
+      длине блока */
+    memset( bkey->ivector.data, 0, bkey->ivector.size );
+    bkey->key.flags |= ak_flag_xcrypt_acpkm_update;
+   /* восстанавливаем исходные значения ключей и удаляем буфер */
+    bkey->key.key.data = key_data[0];
+    bkey->key.data = key_data[1];
+    ak_ptr_wipe( bkey->data, data_ptr->size, &bkey->key.generator );
+    free( bkey->data );
+   /* перемаскируем ключ */
+    bkey->key.remask( &bkey->key );
+  } else {
+          /* перемаскируем ключи */
+           if( bkey->ivector.size == 8 ) {
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)key_data[0])[i] += ((ak_uint32 *)bkey->key.key.data)[i];
+               ((ak_uint32 *)key_data[0])[i] -= ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)key_data[0])[i] -= ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)bkey->key.key.data)[i] += ((ak_uint32 *)key_data[0])[i];
+             }
+             bkey->key.remask( &bkey->key );
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)bkey->key.key.data)[i] -= ((ak_uint32 *)key_data[0])[i];
+               ((ak_uint32 *)key_data[0])[i] += ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)key_data[0])[i] += ((ak_uint32 *)bkey->key.mask.data)[i];
+               ((ak_uint32 *)key_data[0])[i] -= ((ak_uint32 *)bkey->key.key.data)[i];
+             }
+           }
+           if( bkey->ivector.size == 16 ) {
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)key_data[0])[i] ^= ((ak_uint32 *)bkey->key.key.data)[i];
+               ((ak_uint32 *)bkey->key.key.data)[i] ^= ((ak_uint32 *)key_data[0])[i];
+             }
+             bkey->key.remask( &bkey->key );
+             for( i = 0; i < 8; i++ ) {
+               ((ak_uint32 *)bkey->key.key.data)[i] ^= ((ak_uint32 *)key_data[0])[i];
+               ((ak_uint32 *)key_data[0])[i] ^= ((ak_uint32 *)bkey->key.key.data)[i];
+             }
+           }
+          /* восстанавливаем исходные значения ключей */
+           bkey->key.key.data = key_data[0];
+           bkey->key.data = key_data[1];
+         }
+
+ return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+ int ak_bckey_context_xcrypt_acpkm_with_mask( ak_bckey bkey, ak_pointer out1, ak_pointer out2,
+                                                               ak_pointer mask, const size_t n_size )
+{
+  ak_int64 blocks = 7 - ( bkey->ivector.size >> 2 ),
+            amount = (ak_int64)n_size/bkey->ivector.size,
+            counter;
+  ak_uint64 yaout[4], *outptr = (ak_uint64 *)out1 + 2, *maskptr = (ak_uint64 *)mask + 2;
+  ak_pointer key_data[2] = { bkey->key.key.data, bkey->key.data };
+
+ /* проверяем целостность ключа */
+  if( bkey->key.check_icode( &bkey->key ) != ak_true )
+    return ak_error_message( ak_error_wrong_key_icode, __func__,
+                                                    "incorrect integrity code of secret key value" );
+ /* проверяем длину секции на кратность длине блока */
+  if( (ak_int64)n_size%bkey->ivector.size != 0 )
+    return ak_error_message( ak_error_wrong_length, __func__, "incorrect length of section value" );
+ /* уменьшаем значение ресурса ключа */
+  counter = ak_min( blocks, amount );
+  if( bkey->key.resource.counter < counter )
+    return ak_error_message( ak_error_low_key_resource,
+                                                      __func__, "low resource of block cipher key" );
+   else bkey->key.resource.counter -= counter; /* уменьшаем ресурс ключа */
+ /* выставляем флаг уменьшения ресурса ключа в xcrypt_acpkm_update */
+  if( counter < amount )
+    bkey->key.flags |= ak_flag_xcrypt_acpkm_resource;
+
+ /* создаем буфер для хранения преобразованного ключа */
+  if( bkey->data != NULL ) {
+    ak_ptr_wipe( bkey->data, ((struct acpkm *)bkey->data)->size, &bkey->key.generator );
+    free( bkey->data );
+  }
+  if( bkey->ivector.size == 8 ) {
+    bkey->data = malloc( 56 );
+    ((struct acpkm *)bkey->data)->size = 56;
+  }
+  if( bkey->ivector.size == 16 ) {
+   /* выделяем память с учетом раундовых ключей */
+    bkey->data =
+#ifdef LIBAKRYPT_HAVE_STDALIGN
+    aligned_alloc( 16,
+#else
+    malloc(
+#endif
+    704 );
+    ((struct acpkm *)bkey->data)->size = 704;
+   /* копируем раундовые ключи */
+    memcpy( ((struct acpkm *)bkey->data)->expanded_keys + 1, bkey->key.data, 640 );
+   /* меняем место нахождения раундовых ключей */
+    bkey->key.data = ((struct acpkm *)bkey->data)->expanded_keys + 1;
+  }
+ /* копируем исходный ключ */
+  memcpy( ((struct acpkm *)bkey->data)->key, bkey->key.key.data, 32 );
+ /* меняем указатель, где хранится ключ */
+  bkey->key.key.data = ((struct acpkm *)bkey->data)->key;
+
+ /* теперь приступаем к зашифрованию данных */
+  counter = 0;
+  memset( bkey->ivector.data, 0, bkey->ivector.size );
+ /* здесь длина блока равна 64 бита */
+  if( bkey->ivector.size == 8 ) {
+    outptr++;
+    maskptr++;
+    memset( ((ak_uint8 *)bkey->ivector.data)+4, 0xff, 4 );
+    do {
+        if( counter == amount ) { /* преобразование ключа ACPKM */
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[8], &yaout[1],
+                                                               (ak_uint8 *)bkey->key.mask.data + 8 );
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[24], &yaout[3],
+                                                              (ak_uint8 *)bkey->key.mask.data + 24 );
+          memcpy( bkey->key.key.data, yaout, 32 );
+         /* зачищаем значение ключа, которое больше не нужно */
+          ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+          counter = 0;
+        }
+        if( blocks == 1 )
+          bkey->encrypt( &bkey->key, bkey->ivector.data, out2 );
+        else {
+               ak_magma_encrypt_acpkm_with_mask( &bkey->key, bkey->ivector.data, outptr, maskptr );
+               outptr--; maskptr--;
+             }
+        ((ak_uint64 *)bkey->ivector.data)[0]++;
+        counter++;
+    } while( --blocks > 0 );
+  }
+
+ /* здесь длина блока равна 128 бит */
+  if( bkey->ivector.size == 16 ) {
+    memset( ((ak_uint8 *)bkey->ivector.data)+8, 0xff, 8 );
+    do {
+        if( counter == amount ) { /* преобразование ключа ACPKM */
+          ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+          ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+          memcpy( bkey->key.key.data, yaout, 32 );
+         /* зачищаем значение ключа, которое больше не нужно */
+          ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+          ak_kuznechik_schedule_keys_without_allocation( &bkey->key );
+          counter = 0;
+        }
+        if( blocks == 1 )
+          bkey->encrypt( &bkey->key, bkey->ivector.data, out2 );
+        else {
+               ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, bkey->ivector.data, outptr,
+                                                                                           maskptr );
+               outptr--; maskptr--;
+               outptr--; maskptr--;
+             }
+        ((ak_uint64 *)bkey->ivector.data)[0]++;
+        counter++;
+    } while( --blocks > 0 );
+  }
+
+ /* восстанавливаем исходные значения ключей и записываем данные,
+    необходимые для xcrypt_acpkm_with_mask_update */
+  bkey->key.key.data = key_data[0];
+  bkey->key.data = key_data[1];
+  ((struct acpkm *)bkey->data)->amount = amount;
+  ((struct acpkm *)bkey->data)->counter = counter;
+
+ return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+ int ak_bckey_context_xcrypt_acpkm_with_mask_update( ak_bckey bkey, ak_pointer out1, ak_pointer out2,
+                                                                                    ak_pointer mask )
+{
+  ak_int64 blocks = 7 - ( bkey->ivector.size >> 2 );
+  ak_uint64 yaout[4], *outptr = (ak_uint64 *)out1 + 2, *maskptr = (ak_uint64 *)mask + 2;
+  struct acpkm *data_ptr = (struct acpkm *)bkey->data;
+  ak_pointer key_data[2] = { bkey->key.key.data, bkey->key.data };
+
+ /* проверяем, что мы можем использовать данную функцию */
+  if( bkey->data == NULL )
+    return ak_error_message( ak_error_wrong_block_cipher_function, __func__,
+                  "using this function with previously incorrect xcrypt_acpkm_with_mask operation" );
+ /* проверяем целостность ключа */
+  if( bkey->key.check_icode( &bkey->key ) != ak_true )
+    return ak_error_message( ak_error_wrong_key_icode, __func__,
+                                                    "incorrect integrity code of secret key value" );
+ /* уменьшаем значение ресурса ключа */
+  if( bkey->key.flags&ak_flag_xcrypt_acpkm_resource ) {
+    ak_int64 counter = ak_min( blocks, data_ptr->amount - data_ptr->counter );
+    if( bkey->key.resource.counter < counter )
+      return ak_error_message( ak_error_low_key_resource,
+                                                      __func__, "low resource of block cipher key" );
+     else bkey->key.resource.counter -= counter; /* уменьшаем ресурс ключа */
+    if( counter == data_ptr->amount - data_ptr->counter )
+      bkey->key.flags ^= ak_flag_xcrypt_acpkm_resource;
+  }
+
+ /* меняем указатели, где хранятся ключи */
+  bkey->key.key.data = data_ptr->key;
+  bkey->key.data = data_ptr->expanded_keys + 1;
+
+ /* теперь приступаем к зашифрованию данных */
+
+ /* здесь длина блока равна 64 бита */
+  if( bkey->ivector.size == 8 ) {
+    outptr++;
+    maskptr++;
+    do {
+        if( data_ptr->counter == data_ptr->amount ) { /* преобразование ключа ACPKM */
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[8], &yaout[1],
+                                                               (ak_uint8 *)bkey->key.mask.data + 8 );
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+          ak_magma_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[24], &yaout[3],
+                                                              (ak_uint8 *)bkey->key.mask.data + 24 );
+          memcpy( bkey->key.key.data, yaout, 32 );
+         /* зачищаем значение ключа, которое больше не нужно */
+          ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+          data_ptr->counter = 0;
+        }
+        if( blocks == 1 )
+          bkey->encrypt( &bkey->key, bkey->ivector.data, out2 );
+        else {
+               ak_magma_encrypt_acpkm_with_mask( &bkey->key, bkey->ivector.data, outptr, maskptr );
+               outptr--; maskptr--;
+             }
+        ((ak_uint64 *)bkey->ivector.data)[0]++;
+        data_ptr->counter++;
+    } while( --blocks > 0 );
+  }
+
+ /* здесь длина блока равна 128 бит */
+  if( bkey->ivector.size == 16 ) {
+    do {
+        if( data_ptr->counter == data_ptr->amount ) { /* преобразование ключа ACPKM */
+          ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[0], &yaout[0],
+                                                                               bkey->key.mask.data );
+          ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, (ak_pointer)&acpkm_d[16], &yaout[2],
+                                                              (ak_uint8 *)bkey->key.mask.data + 16 );
+          memcpy( bkey->key.key.data, yaout, 32 );
+         /* зачищаем значение ключа, которое больше не нужно */
+          ak_ptr_wipe( yaout, 32, &bkey->key.generator );
+          ak_kuznechik_schedule_keys_without_allocation( &bkey->key );
+          data_ptr->counter = 0;
+        }
+        if( blocks == 1 )
+          bkey->encrypt( &bkey->key, bkey->ivector.data, out2 );
+        else {
+               ak_kuznechik_encrypt_acpkm_with_mask( &bkey->key, bkey->ivector.data, outptr,
+                                                                                           maskptr );
+               outptr--; maskptr--;
+               outptr--; maskptr--;
+             }
+        ((ak_uint64 *)bkey->ivector.data)[0]++;
+        data_ptr->counter++;
+    } while( --blocks > 0 );
+  }
+
+ /* восстанавливаем исходные значения ключей */
+  bkey->key.key.data = key_data[0];
+  bkey->key.data = key_data[1];
 
  return ak_error_ok;
 }
