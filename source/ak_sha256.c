@@ -46,19 +46,18 @@ static ak_uint32 rotr(ak_uint32 word, ak_uint32 n) {
 static inline void sha256_prepare( struct sha256 *ctx)
 {
    ak_uint32 *words = ctx->words;
-       for (int z = 0; z < 16; ++z) {
-           ((ak_uint8 *) words)[z * 4 + 0] = ctx->current_block[z * 4 + 3];
-           ((ak_uint8 *) words)[z * 4 + 1] = ctx->current_block[z * 4 + 2];
-           ((ak_uint8 *) words)[z * 4 + 2] = ctx->current_block[z * 4 + 1];
-           ((ak_uint8 *) words)[z * 4 + 3] = ctx->current_block[z * 4 + 0];
-       }
-
-    for (int i = 16; i < 64; ++i) {
-        unsigned int s0 = rotr(words[i-15], 7) ^ rotr(words[i-15], 18) ^ (words[i-15] >> 3);
-        unsigned int s1 = rotr(words[i-2], 17) ^ rotr(words[i-2], 19) ^ (words[i-2] >> 10);
-        words[i] = words[i-16] + s0 + words[i-7] + s1;
-    }
-    for (int i = 0; i < 8; ++i) {
+   for (int z = 0; z < 16; ++z) {
+       ((ak_uint8 *) words)[z * 4 + 0] = ctx->current_block[z * 4 + 3];
+       ((ak_uint8 *) words)[z * 4 + 1] = ctx->current_block[z * 4 + 2];
+       ((ak_uint8 *) words)[z * 4 + 2] = ctx->current_block[z * 4 + 1];
+       ((ak_uint8 *) words)[z * 4 + 3] = ctx->current_block[z * 4 + 0];
+   }
+   for (int i = 16; i < 64; ++i) {
+       unsigned int s0 = rotr(words[i-15], 7) ^ rotr(words[i-15], 18) ^ (words[i-15] >> 3);
+       unsigned int s1 = rotr(words[i-2], 17) ^ rotr(words[i-2], 19) ^ (words[i-2] >> 10);
+       words[i] = words[i-16] + s0 + words[i-7] + s1;
+   }
+   for (int i = 0; i < 8; ++i) {
        ctx->A[i] = ctx->H[i];
    }
 }
@@ -81,7 +80,6 @@ ak_uint32 sha256_ma(ak_uint32 a, ak_uint32 b, ak_uint32 c){
 /* ----------------------------------------------------------------------------------------------- */
 static inline void sha256_block( struct sha256 *ctx )
 {
-
     for (int i = 0; i < 64; ++i) {
         ak_uint32 t1 = ctx->A[7] + sha256_sigma1(ctx->A[4]) + sha256_ch(ctx->A[4], ctx->A[5], ctx->A[6]) + sha256_c[i] + ctx->words[i];
         ak_uint32 t2 = sha256_sigma0(ctx->A[0]) + sha256_ma(ctx->A[0], ctx->A[1], ctx->A[2]);
@@ -231,12 +229,6 @@ static ak_buffer ak_hash_sha256_finalize( ak_pointer ctx, const ak_pointer in,
     block2[57] = ((ak_uint8 *) &length)[6];
     block2[56] = ((ak_uint8 *) &length)[7];
 
-//    printf("current stroka\n");
-//    for (int i = 0; i < 64; ++i) {
-//        printf("%08x ", block1[i]);
-//    }
-//    printf("\n");
-
     sx->current_block = block1;
     sha256_prepare(sx);
     sha256_block(sx);
@@ -252,6 +244,7 @@ static ak_buffer ak_hash_sha256_finalize( ak_pointer ctx, const ak_pointer in,
     }
 
     sha256_endian_change(sx);
+
     if( out != NULL ) {
         memcpy(out, sx->H, ((ak_hash) ctx)->hsize);
         return NULL;

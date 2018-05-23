@@ -55,7 +55,6 @@ static inline void sha512_prepare( struct sha512 *ctx)
         ((ak_uint8 *) words)[z * 8 + 6] = ctx->current_block[z * 8 + 1];
         ((ak_uint8 *) words)[z * 8 + 7] = ctx->current_block[z * 8 + 0];
     }
-
     for (int i = 16; i < 80; ++i) {
         ak_uint64 s0 = rotr(words[i-15], 1) ^ rotr(words[i-15], 8) ^ (words[i-15] >> 7);
         ak_uint64 s1 = rotr(words[i-2], 19) ^ rotr(words[i-2], 61) ^ (words[i-2] >> 6);
@@ -84,7 +83,6 @@ ak_uint64 sha512_ma(ak_uint64 a, ak_uint64 b, ak_uint64 c){
 /* ----------------------------------------------------------------------------------------------- */
 static inline void sha512_block( struct sha512 *ctx )
 {
-
     for (int i = 0; i < 80; ++i) {
         ak_uint64 t1 = ctx->A[7]+ sha512_sigma1(ctx->A[4])
                 + sha512_ch(ctx->A[4], ctx->A[5], ctx->A[6]) + sha512_c[i] + ctx->words[i];
@@ -277,12 +275,6 @@ static ak_buffer ak_hash_sha512_finalize( ak_pointer ctx, const ak_pointer in,
     block2[121] = ((ak_uint8 *) &length)[6];
     block2[120] = ((ak_uint8 *) &length)[7];
 
-//    printf("current stroka\n");
-//    for (int i = 0; i < 64; ++i) {
-//        printf("%08x ", block1[i]);
-//    }
-//    printf("\n");
-
     sx->current_block = block1;
     sha512_prepare(sx);
     sha512_block(sx);
@@ -298,6 +290,7 @@ static ak_buffer ak_hash_sha512_finalize( ak_pointer ctx, const ak_pointer in,
     }
 
     sha512_endian_change(sx);
+
     if( out != NULL ) {
         memcpy(out, sx->H, ((ak_hash) ctx)->hsize);
         return NULL;
@@ -590,7 +583,7 @@ ak_bool ak_hash_test_sha512( void )
         ak_error_message( ak_error_not_equal_data, __func__ ,
                           "the 1st test is wrong" );
         ak_log_set_message(( str = ak_ptr_to_hexstr( out, 64, ak_false ))); free( str );
-        ak_log_set_message(( str = ak_ptr_to_hexstr( sha384_testM1, 64, ak_false ))); free( str );
+        ak_log_set_message(( str = ak_ptr_to_hexstr( sha512_testM1, 64, ak_false ))); free( str );
         result = ak_false;
         goto lab_exit;
     }
@@ -598,18 +591,18 @@ ak_bool ak_hash_test_sha512( void )
     /* второй пример */
     ak_hash_context_ptr( &ctx, sha_M2_message, 56, out );
     if(( error = ak_error_get_value()) != ak_error_ok ) {
-        ak_error_message( error, __func__ , "invalid calculation of sha384 code" );
+        ak_error_message( error, __func__ , "invalid calculation of sha512 code" );
         result = ak_false;
         goto lab_exit;
     }
 
-    if( ak_ptr_is_equal( sha512_testM2, out, 48 )) {
+    if( ak_ptr_is_equal( sha512_testM2, out, 64 )) {
         if( audit >= ak_log_maximum )
             ak_error_message( ak_error_ok, __func__ , "the 2nd test is Ok" );
     } else {
         ak_error_message( ak_error_not_equal_data, __func__ , "the 2nd test is wrong" );
-        ak_log_set_message(( str = ak_ptr_to_hexstr( out, 48, ak_false ))); free( str );
-        ak_log_set_message(( str = ak_ptr_to_hexstr( sha384_testM2, 48, ak_false ))); free( str );
+        ak_log_set_message(( str = ak_ptr_to_hexstr( out, 64, ak_false ))); free( str );
+        ak_log_set_message(( str = ak_ptr_to_hexstr( sha512_testM2, 64, ak_false ))); free( str );
         result = ak_false;
         goto lab_exit;
     }
@@ -735,7 +728,7 @@ ak_bool ak_hash_test_sha512_224( void )
     } else {
         ak_error_message( ak_error_not_equal_data, __func__ , "the 2nd test is wrong" );
         ak_log_set_message(( str = ak_ptr_to_hexstr( out, 28, ak_false ))); free( str );
-        ak_log_set_message(( str = ak_ptr_to_hexstr( sha384_testM2, 28, ak_false ))); free( str );
+        ak_log_set_message(( str = ak_ptr_to_hexstr( sha512_224_testM2, 28, ak_false ))); free( str );
         result = ak_false;
         goto lab_exit;
     }

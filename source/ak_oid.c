@@ -153,12 +153,12 @@
         в дереве библиотеки: 1.2.643.2.52.1.13.2 - параметры 512 битных кривых */
 
  /* 14. идентификаторы алгоритмов бесключевого хеширования SHA-2 */
-   { hash_function, algorithm, "sha224", "...", NULL, (ak_function_void *) ak_hash_create_sha224},
-   { hash_function, algorithm, "sha256", "...", NULL, (ak_function_void *) ak_hash_create_sha256 },
-   { hash_function, algorithm, "sha384", "...", NULL, (ak_function_void *) ak_hash_create_sha384 },
-   { hash_function, algorithm, "sha512", "...", NULL, (ak_function_void *) ak_hash_create_sha512 },
-   { hash_function, algorithm, "sha512_256", "...", NULL, (ak_function_void *) ak_hash_create_sha512_256 },
-   { hash_function, algorithm, "sha512_224", "...", NULL, (ak_function_void *) ak_hash_create_sha512_224 },
+   { hash_function, algorithm, "sha224", "2.16.840.1.101.3.4.2.4", NULL, (ak_function_void *) ak_hash_create_sha224},
+   { hash_function, algorithm, "sha256", "2.16.840.1.101.3.4.2.1", NULL, (ak_function_void *) ak_hash_create_sha256 },
+   { hash_function, algorithm, "sha384", "2.16.840.1.101.3.4.2.2", NULL, (ak_function_void *) ak_hash_create_sha384 },
+   { hash_function, algorithm, "sha512", "2.16.840.1.101.3.4.2.3", NULL, (ak_function_void *) ak_hash_create_sha512 },
+   { hash_function, algorithm, "sha512_256", "2.16.840.1.101.3.4.2.6", NULL, (ak_function_void *) ak_hash_create_sha512_256 },
+   { hash_function, algorithm, "sha512_224", "2.16.840.1.101.3.4.2.5", NULL, (ak_function_void *) ak_hash_create_sha512_224 },
 
   /* завершающая константа, должна всегда принимать неопределенные и нулевые значения */
    { undefined_engine, undefined_mode, NULL, NULL, NULL, NULL }
