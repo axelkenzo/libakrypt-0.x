@@ -721,6 +721,7 @@
     bkey->key.data = key_data[1];
     ak_ptr_wipe( bkey->data, ((struct acpkm *)bkey->data)->size, &bkey->key.generator );
     free( bkey->data );
+    bkey->data = NULL;
    /* перемаскируем ключ */
     bkey->key.remask( &bkey->key );
   } else {
@@ -901,6 +902,7 @@
     bkey->key.data = key_data[1];
     ak_ptr_wipe( bkey->data, data_ptr->size, &bkey->key.generator );
     free( bkey->data );
+    bkey->data = NULL;
    /* перемаскируем ключ */
     bkey->key.remask( &bkey->key );
   } else {

@@ -29,7 +29,7 @@
       fwrite( memory, 1, 1024, fp );
    }
    fflush(fp);
- } else printf(" found file for testing with %dMB size\n", (int) mbsize );
+ } else printf(" found file 'data.dat' for testing \n");
  fclose(fp);
  printf("\n");
 
