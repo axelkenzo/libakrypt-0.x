@@ -449,6 +449,8 @@
 #endif
 /*! \brief Создание дескриптора генератора по его OID. */
  dll_export ak_handle ak_random_new_oid( ak_handle );
+/*! \brief Создание дескриптора генератора с использованием хэш-функции. */
+ dll_export ak_handle ak_random_new_tc26(const char * hash_function_name);
 /*! \brief Заполнение заданного массива случайными данными. */
  dll_export int ak_random_ptr( ak_handle, const ak_pointer, const size_t );
 /*! \brief Создание буффера заданного размера со случайными данными. */

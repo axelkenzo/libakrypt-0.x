@@ -174,6 +174,7 @@ set( EXAMPLES_LIST hello
                    oid
                    hash
                    hash-oids
+                   random-tc26
 )
 
 # организуем сборку примеров со статической линковкой

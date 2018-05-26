@@ -453,6 +453,128 @@
 #endif
 
 /* ----------------------------------------------------------------------------------------------- */
+/*                                 реализация класса rng_tc26                                      */
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Класс для хранения внутренних данных генератора по tc26                                 */
+struct random_tc26{
+  ak_uint8 U[64];
+  ak_uint8 H[64];
+  size_t k;
+  struct hash ctx;
+};
+typedef struct random_tc26 *ak_random_tc26;
+
+/* ----------------------------------------------------------------------------------------------- */
+static void ak_random_tc26_free(ak_pointer data)
+{
+  ak_hash_destroy( &((ak_random_tc26)(data))->ctx);
+  free(data);
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+static int ak_random_tc26_next(ak_random rnd)
+{
+  if (rnd == NULL)
+    return ak_error_message(ak_error_null_pointer,__func__,"using of null pointer generator");
+
+  // U = U + 1
+  for (size_t i = 0; i < 63; i++) {
+    ((ak_random_tc26)(rnd->data))->U[i]++;
+    if ( ((ak_random_tc26)(rnd->data))->U[i] != 0) break;
+  }
+  return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+static int ak_random_tc26_random(ak_random rnd, const ak_pointer ptr, const size_t t)
+{
+  if (rnd == NULL)
+    return ak_error_message(ak_error_null_pointer,__func__,"using of null pointer generator");
+
+  size_t h = ((ak_random_tc26)(rnd->data))->ctx.hsize; // длина хэш-блока
+  size_t k = ((ak_random_tc26)(rnd->data))->k; // кол-во значений в H
+
+  ak_uint8 *R = ptr;
+
+  if (t <= k)
+  {
+    memcpy(R,((ak_random_tc26)(rnd->data))->H,t);
+
+    memcpy(((ak_random_tc26)(rnd->data))->H,((ak_random_tc26)(rnd->data))->H+t,k-t);
+    ((ak_random_tc26)(rnd->data))->k = k - t;
+
+  } else
+  {
+    ak_uint8 C[64];
+    // заполняем R оставшимися k значениями из H
+    memcpy(R,((ak_random_tc26)(rnd->data))->H,((ak_random_tc26)(rnd->data))->k);
+    size_t q = (t-k)/h;
+    size_t r = (t-k)%h;
+
+    ((ak_random_tc26)(rnd->data))->k = 0;
+
+    size_t i;
+    for (i = 0; i < q; i++) {
+      ak_random_tc26_next(rnd);
+      // C = hash(U)
+      ak_hash_context_ptr( &((ak_random_tc26)(rnd->data))->ctx, ((ak_random_tc26)(rnd->data))->U, 64, C);
+      // заполняем R блоками по h
+      memcpy(R+k+i*h,C,h);
+    }
+
+    if (r != 0) {
+      ak_random_tc26_next(rnd);
+      // C = hash(U)
+      ak_hash_context_ptr( &((ak_random_tc26)(rnd->data))->ctx, ((ak_random_tc26)(rnd->data))->U, 64, C);
+      // R заполняем r байтами
+      memcpy(R+t-r,C,r);
+      // H заполняем оставшимися значениями хэша
+      memcpy(((ak_random_tc26)(rnd->data))->H,C+r,h-r);
+      ((ak_random_tc26)(rnd->data))->k = h - r;
+    }
+  }
+
+  return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+int ak_random_create_tc26(ak_random generator, const char * hash_function_name)
+{
+  int error = ak_error_ok;
+
+  ak_oid oid;
+  // поиск oid по имени
+  if ( (oid = ak_oid_find_by_name(hash_function_name)) == NULL)
+    return ak_error_message(ak_error_get_value(),__func__,"internal OID search error");
+
+  if ( (error = ak_random_create(generator)) != ak_error_ok)
+    return ak_error_message(error, __func__, "wrong initialization of random generator");
+
+  if ( (generator->data = malloc(sizeof(struct random_tc26))) == NULL)
+    return ak_error_message(ak_error_out_of_memory,__func__,"incorrect memory allocationfor internal data of generator");
+
+  if ( (error = ak_hash_create_oid( &((ak_random_tc26)(generator->data))->ctx, oid)) !=  ak_error_ok)
+    return ak_error_message(error, __func__, "incorrect hash context creation");
+
+
+  size_t i;
+  memset( ((ak_random_tc26)(generator->data))->H,0,64);
+  ((ak_random_tc26)(generator->data))->k = 0;
+
+  // U = K(48) || 0(15) случайное заполнение в старших разрядах
+  memset( ((ak_random_tc26)(generator->data))->U,0,64);
+  for (i=0; i < 48; i++)
+    ((ak_random_tc26)(generator->data))->U[62-i] = ak_random_value();
+
+
+  generator->random = ak_random_tc26_random;
+  generator->next = ak_random_tc26_next;
+  generator->free = ak_random_tc26_free;
+
+  return error;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
 /*                               реализация интерфейсных функций                                   */
 /* ----------------------------------------------------------------------------------------------- */
  ak_handle ak_random_new_lcg( void  )
@@ -541,6 +663,29 @@
  return ak_libakrypt_new_handle( generator, random_generator, "", ak_random_delete );
 }
 #endif
+
+/* ----------------------------------------------------------------------------------------------- */
+ak_handle ak_random_new_tc26(const char* hash_function_name)
+{
+  int error = ak_error_ok;
+  ak_random generator = NULL;
+
+ //создаем генератор
+  if(( generator = malloc( sizeof( struct random ))) == NULL ) {
+    ak_error_message( ak_error_out_of_memory, __func__ ,"wrong creation of random generator context" );
+    return ak_error_wrong_handle;
+  }
+
+ // инициализируем его
+  if(( error = ak_random_create_tc26( generator,hash_function_name )) != ak_error_ok ) {
+    ak_error_message( error, __func__ , "wrong initialization of random generator" );
+    free( generator );
+    return ak_error_wrong_handle;
+  }
+
+ // помещаем в стуктуру управления контекстами
+ return ak_libakrypt_new_handle( generator, random_generator, "", ak_random_delete );
+}
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! @param oid_handle дескриптор OID генератора псевдо-случайных чисел.
