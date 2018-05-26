@@ -14,11 +14,20 @@ int main()
   /* вырабатываем случайные данные и выводим их в консоль */
   if(( buffer = ak_random_buffer( handle, 256 )) != NULL ) {
     char *str = ak_buffer_to_hexstr( buffer );
-    printf("random data (%d bytes):\n%s\n",(int) ak_buffer_get_size( buffer),str);
+    printf("random data %d bytes (using streebog512):\n%s\n",(int) ak_buffer_get_size( buffer),str);
     free( str );
     /* удаляем буффер */
     buffer = ak_buffer_delete( buffer );
   }
-
+  ak_handle handle2;
+  if(( handle2 = ak_random_new_tc26("streebog256")) == ak_error_wrong_handle )
+    return ak_libakrypt_destroy();
+  if(( buffer = ak_random_buffer( handle2, 256 )) != NULL ) {
+    char *str = ak_buffer_to_hexstr( buffer );
+    printf("random data %d bytes (using streebog256):\n%s\n",(int) ak_buffer_get_size( buffer),str);
+    free( str );
+    /* удаляем буффер */
+    buffer = ak_buffer_delete( buffer );
+  }
   return ak_libakrypt_destroy();
 }
