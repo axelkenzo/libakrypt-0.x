@@ -29,6 +29,7 @@
 /* ----------------------------------------------------------------------------------------------- */
  #include <ak_oid.h>
  #include <ak_context_manager.h>
+ #include <ak_hash.h>
 
  #include <time.h>
 #ifdef LIBAKRYPT_HAVE_FCNTL_H
