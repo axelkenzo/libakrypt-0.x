@@ -498,6 +498,11 @@
   ak_uint64 out_3413_2015_ctr_text[4] = {
                   0x4e98110c97b7b93c, 0x3e250d93d6e85d69, 0x136d868807b2dbef, 0x568eb680ab52a12d };
 
+  /* синхропосылка и зашифрованный в режиме гаммирования с обратной связью по шифртексту текст из ГОСТ Р 34.13-2015, приложение А.2 */
+  ak_uint64 cfb_iv[2] = { 0x234567890abcdef1, 0x1234567890abcdef };
+  ak_uint64 out_3413_2015_cfb_text[4] = {
+          0xdb37e0e266903c83, 0x0d46644c1f9a089c, 0x24bdd2035315d38b, 0xbcc0321421075505};
+
 
  /* 1. Инициализируем ключ алгоритма Магма */
   if(( error = ak_bckey_create_magma( &bkey )) != ak_error_ok ) {
@@ -602,6 +607,321 @@
   }
   if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                                      "the counter mode decryption test from GOST R 34.13-2015 is Ok" );
+    /* 6. Тестируем режим гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015 */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 32, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong plain text cfb encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 32 ) ) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "cfb mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_3413_2015_cfb_text, 32, ak_true )); free(str);
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 32, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cipher text cfb decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "cfb mode decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 32, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 7. Тестируем использование режима гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015
+        с длиной входного текста, некратного величине блока: тестируем sub_tail в ak_bckey_context_xcrypt_cfb() */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 17, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb mode sub_tail encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 17 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb mode sub_tail encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 17, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 17, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode sub_tail encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 17, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb mode sub_tail decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 17 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb mode sub_tail decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 17, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 17, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode sub_tail decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 8. Тестируем использование режима гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015
+        с длиной входного текста, некратного величине блока: тестируем tail и sub_tail в ak_bckey_context_xcrypt_cfb() */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 25, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb mode tail and sub_tail encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 25 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb mode tail and sub_tail encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 25, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 25, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode tail and sub_tail encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 25, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb mode tail and sub_tail decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 25 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb mode tail and sub_tail decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 25, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 25, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode tail and sub_tail decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 9. Тестируем использование режима гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015
+        с длиной входного текста, некратного величине блока: тестируем tail в ak_bckey_context_xcrypt_cfb() */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 24, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb mode tail encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 24 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb mode tail encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 24, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 24, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode tail encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 24, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb mode tail decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 24 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb mode tail decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 24, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 24, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb mode tail decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 10. Тестируем использование функций update для режима гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015
+         2 блока сначала зашифруем с помощью ak_bckey_context_encrypt_cfb().
+         Оставшиеся 2 зашифруем с помощью ak_bckey_context_encrypt_cfb_update().
+         Проверяем случай, когда входной текст кратен длине синхропосылки */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong first half plain text encryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_encrypt_cfb_update( &bkey, in_3413_2015_text + 2, out + 16, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong second half plain text update encryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "cfb update mode (inptr%iv_size == 0) encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_3413_2015_cfb_text, 32, ak_true )); free(str);
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode (inptr%iv_size == 0) encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong first half plain text decryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_decrypt_cfb_update( &bkey, out_3413_2015_cfb_text + 2, out + 16, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong second half plain text update decryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "cfb update mode (inptr%iv_size == 0) decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 32, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode (inptr%iv_size == 0) decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 11. Тестируем использование функций update для режима гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015
+         2 блока сначала зашифруем с помощью ak_bckey_context_encrypt_cfb().
+         Ещё 9 байт зашифруем с помощью ak_bckey_context_encrypt_cfb_update(). Проверяем tail и sub_tail в ak_bckey_context_encrypt_cfb_update().
+         Проверяем случай, когда входной текст не кратен длине синхропосылки */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong first 2 plain text blocks encryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_encrypt_cfb_update( &bkey, in_3413_2015_text + 2, out + 16, 9) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong tail and sub_tail plain text update encryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 25 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "cfb update mode tail and sub_tail update encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 25, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_3413_2015_cfb_text, 25, ak_true )); free(str);
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode tail and sub_tail update encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong first 2 plain text blocks decryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_decrypt_cfb_update( &bkey, out_3413_2015_cfb_text + 2, out + 16, 9) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong tail and sub_tail plain text update decryption in cfb mode" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 25 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "cfb update mode tail and sub_tail update decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 25, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 25, ak_true )); free(str);
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode tail and sub_tail update decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 12. Тестируем использование функций update режима гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015
+         с длиной входного текста, некратного величине блока : тестируем sub_tail в ak_bckey_context_xcrypt_cfb_update) */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode sub_tail encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_encrypt_cfb_update( &bkey, in_3413_2015_text + 2, out + 16, 1) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode sub_tail encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 17 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb update mode sub_tail encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 17, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 17, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode sub_tail encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode sub_tail decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_decrypt_cfb_update( &bkey, out_3413_2015_cfb_text + 2, out + 16, 1) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode sub_tail decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 17 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb update mode sub_tail decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 17, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 17, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode sub_tail decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 13. Тестируем использование функций update режима гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015
+         с длиной входного текста, некратного величине блока : тестируем tail в ak_bckey_context_xcrypt_cfb_update) */
+  if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode tail encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_encrypt_cfb_update( &bkey, in_3413_2015_text + 2, out + 16, 8) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode tail encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_3413_2015_cfb_text, 24 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb update mode tail encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 24, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 24, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode tail encryption test from GOST R 34.13-2015 is Ok" );
+
+  if( ak_bckey_context_decrypt_cfb( &bkey, out_3413_2015_cfb_text, out, 16, cfb_iv, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode tail decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_decrypt_cfb_update( &bkey, out_3413_2015_cfb_text + 2, out + 16, 8) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong cfb update mode tail decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 24 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cfb update mode tail decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 24, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 24, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "cfb update mode tail decryption test from GOST R 34.13-2015 is Ok" );
+
  /* освобождаем ключ и выходим */
   exit:
   if(( error = ak_bckey_destroy( &bkey )) != ak_error_ok ) {

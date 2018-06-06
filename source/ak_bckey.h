@@ -95,6 +95,17 @@
 /*! \brief Дальнейшее зашифрование/расшифрование в режиме гаммирования из ГОСТ Р 34.13-2015. */
  int ak_bckey_context_xcrypt_update( ak_bckey , ak_pointer , ak_pointer , size_t );
 
+/*! \brief Зашифрование/расшифрование в режиме гаммирования с обратной связью по шифртексту из ГОСТ Р 34.13-2015. */
+int ak_bckey_context_encrypt_cfb( ak_bckey , ak_pointer , ak_pointer , size_t , ak_pointer , size_t );
+int ak_bckey_context_decrypt_cfb( ak_bckey , ak_pointer , ak_pointer , size_t , ak_pointer , size_t );
+/*! \brief Вспомогательная функция зашифрования/расшифрования в режиме гаммирования с обратной связью по шифртексту из ГОСТ Р 34.13-2015. */
+int ak_bckey_context_xcrypt_cfb( ak_bckey , ak_pointer , ak_pointer , size_t , ak_pointer , size_t , ak_bool );
+/*! \brief Дальнейшее зашифрование/расшифрование в режиме гаммирования с обратной связью по шифртексту из ГОСТ Р 34.13-2015. */
+int ak_bckey_context_encrypt_cfb_update( ak_bckey , ak_pointer , ak_pointer , size_t );
+int ak_bckey_context_decrypt_cfb_update( ak_bckey , ak_pointer , ak_pointer , size_t );
+/*! \brief Вспомогательная функция дальнейшего зашифрования/расшифрования в режиме гаммирования с обратной связью по шифртексту из ГОСТ Р 34.13-2015. */
+int ak_bckey_context_xcrypt_cfb_update( ak_bckey , ak_pointer , ak_pointer , size_t, ak_bool );
+
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Тестирование корректной работы алгоритма блочного шифрования Магма. */
  ak_bool ak_bckey_test_magma( void );

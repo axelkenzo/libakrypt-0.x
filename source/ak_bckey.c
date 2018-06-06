@@ -514,6 +514,378 @@
 }
 
 /* ----------------------------------------------------------------------------------------------- */
+/*! Операция зашифрования текста с помощью режима гаммирования с обратной связью по шифртексту.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование/расшифрование информации.
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные.
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in).
+    @param size Размер зашировываемых данных (в байтах).
+    @param iv Синхропосылка. Согласно  стандарту ГОСТ Р 34.13-2015 длина синхропосылки должна быть
+    ровно в два раза меньше, чем длина блока, то есть 4 байта для Магмы и 8 байт для Кузнечика.
+    @param iv_size Длина синхропосылки (в байтах).
+
+    Значение синхропосылки преобразуется и сохраняется в контексте секретного ключа. Данное значение
+    может быть использовано в дальнейшем при вызове функции ak_bckey_context_encrypt_cfb_update().
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_encrypt_cfb( ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size,
+                                  ak_pointer iv, size_t iv_size )
+{
+    return ak_bckey_context_xcrypt_cfb(bkey, in, out, size, iv, iv_size, ak_true);
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Функция позволяет зашифровывать данные после вызова функции ak_bckey_context_encrypt_cfb()
+    со значением синхропосылки, выработанной в ходе предыдущего вызова. Это позволяет
+    зашифровывать данные поступающие блоками, длина которых кратна длине блока
+    используемого алгоритма блочного шифрования.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование информации
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in)
+    @param size Размер зашировываемых данных (в байтах)
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_encrypt_cfb_update( ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size )
+{
+    return ak_bckey_context_xcrypt_cfb_update(bkey, in, out, size, ak_true);
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Операция расшифрования текста с помощью режима гаммирования с обратной связью по шифртексту.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование/расшифрование информации.
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные.
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in).
+    @param size Размер зашировываемых данных (в байтах).
+    @param iv Синхропосылка. Согласно  стандарту ГОСТ Р 34.13-2015 длина синхропосылки должна быть
+    ровно в два раза меньше, чем длина блока, то есть 4 байта для Магмы и 8 байт для Кузнечика.
+    @param iv_size Длина синхропосылки (в байтах).
+
+    Значение синхропосылки преобразуется и сохраняется в контексте секретного ключа. Данное значение
+    может быть использовано в дальнейшем при вызове функции ak_bckey_context_decrypt_cfb_update().
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_decrypt_cfb( ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size,
+                                  ak_pointer iv, size_t iv_size )
+{
+    return ak_bckey_context_xcrypt_cfb(bkey, in, out, size, iv, iv_size, ak_false);
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Функция позволяет расшифровывать данные после вызова функции ak_bckey_context_decrypt_cfb()
+    со значением синхропосылки, выработанной в ходе предыдущего вызова. Это позволяет
+    расшифровывать данные поступающие блоками, длина которых кратна длине блока
+    используемого алгоритма блочного шифрования.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование информации
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in)
+    @param size Размер зашировываемых данных (в байтах)
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_decrypt_cfb_update( ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size )
+{
+    return ak_bckey_context_xcrypt_cfb_update(bkey, in, out, size, ak_false);
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Вспомогательная функция зашифрования/расшифрования текста с помощью режима гаммирования с обратной связью по шифртексту.
+    Функция содержит саму логику зашифрования/расшифрования текста.
+    Если в функцию передаётся флаг encrypt = ak_true, следовательно, алгоритм будет работать в режиме зашифрования.
+    Если в функцию передаётся флаг encrypt = ak_false, следовательно, алгоритм будет работать в режиме расшифрования.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование/расшифрование информации.
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные.
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in).
+    @param size Размер зашировываемых данных (в байтах).
+    @param iv Синхропосылка. Согласно  стандарту ГОСТ Р 34.13-2015 длина синхропосылки должна быть
+    ровно в два раза меньше, чем длина блока, то есть 4 байта для Магмы и 8 байт для Кузнечика.
+    @param iv_size Длина синхропосылки (в байтах).
+    @param encrypt Флаг зашифрования/расшифрования.
+
+    Значение синхропосылки преобразуется и сохраняется в контексте секретного ключа. Данное значение
+    может быть использовано в дальнейшем при вызове функций ak_bckey_context_encrypt_cfb_update()/ak_bckey_context_decrypt_cfb_update().
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_xcrypt_cfb( ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size,
+                                 ak_pointer iv, size_t iv_size , ak_bool encrypt)
+{
+    ak_bool magma = ak_false, kuznechik = ak_false;
+    ak_int64 blocks = (ak_int64)size/iv_size, sub_blocks = 0,
+            tail = (ak_int64)size%iv_size, sub_tail = 0;
+    ak_buffer_alloc(&bkey->ivector, iv_size);
+    if( bkey->key.oid == ak_oid_find_by_name("magma") ){
+        sub_blocks = iv_size/8;
+        tail = tail/8;
+        sub_tail = size%8;
+        magma = ak_true;
+    }
+    if( bkey->key.oid == ak_oid_find_by_name("kuznechik") ){
+        sub_blocks = iv_size/16;
+        tail = tail/16;
+        sub_tail = size%16;
+        kuznechik = ak_true;
+    }
+    ak_uint64 yaout[2], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+
+    /* проверяем целостность ключа */
+    if( bkey->key.check_icode( &bkey->key ) != ak_true )
+        return ak_error_message( ak_error_wrong_key_icode, __func__,
+                                 "incorrect integrity code of secret key value" );
+    /* проверяем кратна ли синхропосылка длине блока ключа */
+    if( (iv_size%8) != 0 || (iv_size%16) != 0 )
+        return ak_error_message( ak_error_wrong_iv_length, __func__,
+                                 "incorrect length of initial value" );/* уменьшаем значение ресурса ключа */
+    /* уменьшаем значение ресурса ключа */
+    if( bkey->key.resource.counter < ( blocks*sub_blocks + tail + ( sub_tail > 0 )))
+        return ak_error_message( ak_error_low_key_resource,
+                                 __func__ , "low resource of block cipher key" );
+    else bkey->key.resource.counter -= ( blocks*sub_blocks + tail + ( sub_tail > 0 )); /* уменьшаем ресурс ключа */
+
+    /* теперь приступаем к зашифрованию данных */
+    if( bkey->key.flags&ak_flag_xcrypt_cfb_update )
+        bkey->key.flags ^= ak_flag_xcrypt_cfb_update;
+    memset( bkey->ivector.data, 0, bkey->ivector.size );
+    memcpy( (ak_uint8 *)bkey->ivector.data, iv, iv_size );
+
+    if( blocks ) {
+        /* здесь длина блока равна 64 бита */
+        if( magma ){
+            do {
+                for(size_t i = 1; i <= sub_blocks; ++i){
+                    /* копируем 8 байт сдвигая указатель справа налево в цикле по модулю sub_blocks
+                       в использованный блок будем записывать шифртекст и увеличивать i */
+                    bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (iv_size - (8*i)), yaout );
+                    *outptr = *inptr ^ yaout[0];
+                    if(encrypt == ak_true)
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (iv_size - (8*i)), outptr, 8);
+                    else
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (iv_size - (8*i)), inptr, 8);
+                    outptr++; inptr++;
+                }
+            } while ( --blocks > 0 );
+        }
+
+        /* здесь длина блока равна 128 бит */
+        if( kuznechik ){
+            do {
+                for(size_t i = 1; i <= sub_blocks; ++i){
+                    /* копируем 16 байт сдвигая указатель справа налево в цикле по модулю sub_blocks
+                       в использованный блок будем записывать шифртекст и увеличивать i */
+                    bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (iv_size - (16*i)), yaout );
+                    *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                    *outptr = *inptr ^ yaout[1];
+                    if(encrypt == ak_true){
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (iv_size - (16*i)), --outptr, 16);
+                        outptr++;
+                    }
+                    else {
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (iv_size - (16*i)), --inptr, 16);
+                        inptr++;
+                    }
+                    outptr++; inptr++;
+                }
+            } while( --blocks > 0 );
+        }
+    }
+
+    if( tail ) { /* мы обрабатываем хвост сообщения, который кратен длине блока, но меньше длины синхропосылки */
+        /* здесь длина блока равна 64 бита */
+        if( magma ){
+            do {
+                bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (iv_size - 8*(sub_blocks - 1)), yaout );
+                *outptr = *inptr ^ yaout[0];
+                outptr++; inptr++; sub_blocks--;
+            } while ( --tail > 0);
+        }
+
+        /* здесь длина блока равна 128 бит */
+        if( kuznechik ){
+            do {
+                bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (iv_size - 16*(sub_blocks - 1)), yaout );
+                *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                *outptr = *inptr ^ yaout[1]; outptr++; inptr++; sub_blocks--;
+            } while ( --tail > 0);
+        }
+
+        /* запрещаем дальнейшее использование xcrypt_cfb_update для данных, длина которых не кратна длине синхропосылки */
+        if( !sub_tail )
+            memset( bkey->ivector.data, 0, bkey->ivector.size );
+        bkey->key.flags |= ak_flag_xcrypt_cfb_update;
+    }
+
+    if( sub_tail ) { /* на последок, мы обрабатываем хвост сообщения, который меньше длины блока */
+        if( magma )
+            bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + 8 * (sub_blocks - 1) , yaout);
+        if( kuznechik )
+            bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + 16 * (sub_blocks - 1), yaout );
+        for( size_t  i = 0; i < sub_tail; i++ )
+            ( (ak_uint8*)outptr )[i] = ( (ak_uint8*)inptr )[i]^( (ak_uint8 *)yaout)[i];
+
+        /* запрещаем дальнейшее использование xcrypt_cfb_update для данных, длина которых не кратна длине блока */
+        memset( bkey->ivector.data, 0, bkey->ivector.size );
+        bkey->key.flags |= ak_flag_xcrypt_cfb_update;
+    }
+
+    /* перемаскируем ключ */
+    if( bkey->key.remask( &bkey->key ) != ak_error_ok )
+        return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+    return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Вспомогательная функция дальнейшего зашифрования/расшифрования текста с помощью режима гаммирования с обратной связью по шифртексту.
+    Функция содержит саму логику дальнейшего зашифрования/расшифрования текста.
+    Если в функцию передаётся флаг encrypt = ak_true, следовательно, алгоритм будет работать в режиме дальнейшего зашифрования.
+    Если в функцию передаётся флаг encrypt = ak_false, следовательно, алгоритм будет работать в режиме дальнейшего расшифрования.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование/расшифрование информации.
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные.
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in).
+    @param size Размер зашировываемых данных (в байтах).
+    @param encrypt Флаг зашифрования/расшифрования.
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_xcrypt_cfb_update( ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size, ak_bool encrypt )
+{
+    ak_bool magma = ak_false, kuznechik = ak_false;
+    ak_int64 blocks = (ak_int64)size/bkey->ivector.size, sub_blocks = 0,
+            tail = (ak_int64)size%bkey->ivector.size, sub_tail = 0;
+    if( bkey->key.oid == ak_oid_find_by_name("magma") ){
+        sub_blocks = bkey->ivector.size/8;
+        tail = tail/8;
+        sub_tail = (ak_int64)size%8;
+        magma = ak_true;
+    }
+    if( bkey->key.oid == ak_oid_find_by_name("kuznechik") ){
+        sub_blocks = bkey->ivector.size/16;
+        tail = tail/16;
+        sub_tail = (ak_int64)size%16;
+        kuznechik = ak_true;
+    }
+    ak_uint64 yaout[2], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+
+    /* проверяем, что мы можем использовать данный режим */
+    if( bkey->key.flags&ak_flag_xcrypt_cfb_update )
+        return ak_error_message( ak_error_wrong_block_cipher_function, __func__ ,
+                                 "using this function with previously incorrect xcrypt operation");
+    /* проверяем целостность ключа */
+    if( bkey->key.check_icode( &bkey->key ) != ak_true )
+        return ak_error_message( ak_error_wrong_key_icode, __func__,
+                                 "incorrect integrity code of secret key value" );
+    /* уменьшаем значение ресурса ключа */
+    if( bkey->key.resource.counter < ( blocks*sub_blocks + tail + ( sub_tail > 0 )))
+        return ak_error_message( ak_error_low_key_resource,
+                                 __func__ , "low resource of block cipher key" );
+    else bkey->key.resource.counter -= ( blocks*sub_blocks + tail + ( sub_tail > 0 )); /* уменьшаем ресурс ключа */
+
+    /* теперь приступаем к зашифрованию данных */
+    if( blocks ) {
+        /* здесь длина блока равна 64 бита */
+        if( magma ){
+            do {
+                for(size_t i = 1; i <= sub_blocks; ++i){
+                    /* копируем 8 байт сдвигая указатель справа налево в цикле по модулю sub_blocks
+                       в использованный блок будем записывать шифртекст и увеличивать i */
+                    bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - (8*i)), yaout );
+                    *outptr = *inptr ^ yaout[0];
+                    if(encrypt == ak_true)
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - (8*i)), outptr, 8);
+                    else
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - (8*i)), inptr, 8);
+                    outptr++; inptr++;
+                }
+            } while ( --blocks > 0 );
+        }
+
+        /* здесь длина блока равна 128 бит */
+        if( kuznechik ){
+            do {
+                for(size_t i = 1; i <= sub_blocks; ++i){
+                    /* копируем 16 байт сдвигая указатель справа налево в цикле по модулю sub_blocks
+                       в использованный блок будем записывать шифртекст и увеличивать i */
+                    bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - (16*i)), yaout );
+                    *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                    *outptr = *inptr ^ yaout[1];
+                    if(encrypt == ak_true){
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - (16*i)), --outptr, 16);
+                        outptr++;
+                    }
+                    else {
+                        memcpy( (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - (16*i)), --inptr, 16);
+                        inptr++;
+                    }
+                    outptr++; inptr++;
+                }
+            } while( --blocks > 0 );
+        }
+    }
+
+    if( tail ) { /* мы обрабатываем хвост сообщения, который кратен длине блока, но меньше длины синхропосылки */
+        /* здесь длина блока равна 64 бита */
+        if( magma ){
+            do {
+                bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - 8*(sub_blocks - 1)), yaout );
+                *outptr = *inptr ^ yaout[0];
+                outptr++; inptr++; sub_blocks--;
+            } while ( --tail > 0);
+        }
+
+        /* здесь длина блока равна 128 бит */
+        if( kuznechik ){
+            do {
+                bkey->encrypt( &bkey->key, (ak_uint8 *)bkey->ivector.data + (bkey->ivector.size - 16*(sub_blocks - 1)), yaout );
+                *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                *outptr = *inptr ^ yaout[1]; outptr++; inptr++; sub_blocks--;
+            } while ( --tail > 0 );
+        }
+        /* запрещаем дальнейшее использование xcrypt_cfb_update для данных, длина которых не кратна длине синхропосылки */
+        if( !sub_tail )
+            memset( bkey->ivector.data, 0, bkey->ivector.size );
+        bkey->key.flags |= ak_flag_xcrypt_cfb_update;
+    }
+
+    if( sub_tail ) { /* на последок, мы обрабатываем хвост сообщения, который меньше длины блока */
+        if( magma )
+            bkey->encrypt( &bkey->key, (ak_uint8 *) bkey->ivector.data + 8 * (sub_blocks - 1) , yaout);
+        if( kuznechik )
+            bkey->encrypt( &bkey->key, (ak_uint8 *) bkey->ivector.data + 16 * (sub_blocks - 1), yaout );
+        for( size_t  i = 0; i < sub_tail; i++ )
+            ( (ak_uint8*)outptr )[i] = ( (ak_uint8*)inptr )[i]^( (ak_uint8 *)yaout)[i];
+
+        /* запрещаем дальнейшее использование xcrypt_cfb_update для данных, длина которых не кратна длине блока */
+        memset( bkey->ivector.data, 0, bkey->ivector.size );
+        bkey->key.flags |= ak_flag_xcrypt_cfb_update;
+    }
+
+    /* перемаскируем ключ */
+    if( bkey->key.remask( &bkey->key ) != ak_error_ok )
+        return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+    return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
 /*! \example example-bckey-internal.c                                                              */
 /* ----------------------------------------------------------------------------------------------- */
 /*                                                                                     ak_bckey.c  */
