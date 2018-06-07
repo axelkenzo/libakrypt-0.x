@@ -462,6 +462,9 @@
   bkey->encrypt = ak_magma_encrypt_with_mask;
   bkey->decrypt = ak_magma_decrypt_with_mask;
 
+  /* устанавливаем длину блока */
+  bkey->key.block_size = 8;
+
  return error;
 }
 
@@ -494,9 +497,11 @@
                   0x2b073f0494f372a0, 0xde70e715d3556e48, 0x11d8d9e9eacfbc1e, 0x7c68260996c67efb };
 
  /* синхропосылка и зашифрованный в режиме гаммирования текст из ГОСТ Р 34.13-2015, приложение А.2 */
-  ak_uint8 ctr_iv[4] = { 0x78, 0x56, 0x34, 0x12 };
+  ak_uint8 ctr_iv[4] = { 0x78, 0x56, 0x34, 0x12 },
+           ofb_iv[16] = {0xf1, 0xde, 0xbc, 0x0a, 0x89, 0x67, 0x45, 0x23, 0xef, 0xcd, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12};
   ak_uint64 out_3413_2015_ctr_text[4] = {
-                  0x4e98110c97b7b93c, 0x3e250d93d6e85d69, 0x136d868807b2dbef, 0x568eb680ab52a12d };
+                  0x4e98110c97b7b93c, 0x3e250d93d6e85d69, 0x136d868807b2dbef, 0x568eb680ab52a12d },
+            out_ofb[4] = { 0xdb37e0e266903c83, 0x0d46644c1f9a089c, 0xa0f83062430e327e, 0xc824efb8bd4fdb05 };
 
 
  /* 1. Инициализируем ключ алгоритма Магма */
@@ -602,6 +607,259 @@
   }
   if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                                      "the counter mode decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 6. Тестируем режим гаммирования с обратной связью по выходу согласно ГОСТ Р34.13-2015 */
+
+  /* Зашифрование: шифруемый код кратен длине синхропосылки */
+
+  if( ak_bckey_context_ofb( &bkey, in_3413_2015_text, out, 32, ofb_iv, sizeof( ofb_iv )) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "OFB: wrong plain text encryption" );
+    result = ak_false;
+    goto exit;
+  }
+
+  if( !ak_ptr_is_equal( out, out_ofb, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "OFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_3413_2015_ctr_text, 32, ak_true )); free(str);
+    result = ak_false;
+    goto exit;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "OFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+
+  /* Расшифрование: шифруемый код кратен длине синхропосылки */
+
+  if( ak_bckey_context_ofb( &bkey, out_ofb, out, 32, ofb_iv, sizeof( ofb_iv )) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "OFB: wrong cipher text decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "OFB: the counter mode decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 32, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "OFB: the counter mode decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* Зашифрование с использованием update: шифруемый код кратен длине синхропосылки */
+
+  if( ak_bckey_context_ofb( &bkey, in_3413_2015_text, out, 16, ofb_iv, sizeof( ofb_iv )) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update encryption.\nOFB: wrong plain text encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_ofb_update( &bkey, in_3413_2015_text+2, out+16, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update encryption.\nOFB: wrong plain text encryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, out_ofb, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_3413_2015_ctr_text, 32, ak_true )); free(str);
+    result = ak_false;
+    goto exit;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+
+
+  /* Расшифрование с использованием update: шифруемый код кратен длине синхропосылки */
+
+  if( ak_bckey_context_ofb( &bkey, out_ofb , out, 16, ofb_iv, sizeof( ofb_iv )) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update decryption.\nOFB: wrong plain text decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( ak_bckey_context_ofb_update( &bkey, out_ofb +2, out+16, 16) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update decryption.\nOFB:wrong plain text decryption" );
+    result = ak_false;
+    goto exit;
+  }
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "Update decryption.\nOFB: the counter mode decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_3413_2015_ctr_text, 32, ak_true )); free(str);
+    result = ak_false;
+    goto exit;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "Update decryption.\nOFB: the counter mode decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* Зашифрование: шифруемый код не кратен длине синхропосылки */
+
+  if(( error = ak_bckey_context_ofb( &bkey, in_3413_2015_text , out, 17, ofb_iv, sizeof( ofb_iv ) )) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "OFB: wrong counter mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( !ak_ptr_is_equal(out, out_ofb, 17)) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "OFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 17, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_ofb, 17, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "OFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+  /* Расшифрование: шифруемый код не кратен длине синхропосылки */
+
+  if( ak_bckey_context_ofb( &bkey, out_ofb, out, 17, ofb_iv, sizeof( ofb_iv )) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update decryption.\nOFB: wrong cipher text decryption" );
+    result = ak_false;
+    goto exit;
+  }
+
+  if( !ak_ptr_is_equal( out, in_3413_2015_text, 17 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "Update decryption.\nOFB: the counter mode decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 17, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( in_3413_2015_text, 17, ak_true )); free( str );
+    result = ak_false;
+    goto exit;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "Update decryption.\nOFB: the counter mode decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* Дальше мы будем тестировать только зашифрование, поскольку функция зашифрования и расшифрования совпадают. */
+
+  /* Зашифрование: шифруемый код не кратен длине синхропосылки */
+
+  if(( error = ak_bckey_context_ofb( &bkey, in_3413_2015_text , out, 25, ofb_iv, sizeof( ofb_iv ) )) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "Update encryption.\nOFB: wrong counter mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( !ak_ptr_is_equal(out, out_ofb, 25)) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 25, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_ofb, 25, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+
+  /* Зашифрование: шифруемый код не кратен длине синхропосылки, но кратен длине блока */
+
+  if(( error = ak_bckey_context_ofb( &bkey, in_3413_2015_text , out, 24, ofb_iv, sizeof( ofb_iv ) )) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "OFB: wrong counter mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( !ak_ptr_is_equal(out, out_ofb, 24)) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "OFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 24, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_ofb, 24, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "OFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+
+
+  /* Зашифрование с использованием update: шифруемый код не кратен длине синхропосылки, но кратен длине блока */
+
+  if(( error = ak_bckey_context_ofb( &bkey, in_3413_2015_text , out, 16, ofb_iv, sizeof( ofb_iv ) )) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "Update encryption.\nOFB: wrong counter mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( ak_bckey_context_ofb_update( &bkey, in_3413_2015_text+2, out+16, 8) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update encryption.\nOFB:wrong plain text encryption" );
+    result = ak_false;
+    goto exit;
+  }
+
+  if( !ak_ptr_is_equal(out, out_ofb, 24)) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 24, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_ofb, 24, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+
+
+
+  /* Зашифрование с использованием update: шифруемый код не кратен длине синхропосылки, длина хвоста больше длины блока */
+
+  if(( error = ak_bckey_context_ofb( &bkey, in_3413_2015_text , out, 16, ofb_iv, sizeof( ofb_iv ) )) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "Update encryption.\nOFB: wrong counter mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( ak_bckey_context_ofb_update( &bkey, in_3413_2015_text+2, out+16, 9) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update encryption.\nOFB:wrong plain text encryption" );
+    result = ak_false;
+    goto exit;
+  }
+
+  if( !ak_ptr_is_equal(out, out_ofb, 25)) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 25, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_ofb, 25, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+
+
+  /* Зашифрование с использованием update: шифруемый код не кратен длине синхропосылки, длина хвоста меньше длины блока */
+
+  if(( error = ak_bckey_context_ofb( &bkey, in_3413_2015_text , out, 16, ofb_iv, sizeof( ofb_iv ) )) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "Update encryption.\nOFB: wrong counter mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( ak_bckey_context_ofb_update( &bkey, in_3413_2015_text+2, out+16, 1) != ak_error_ok ) {
+    ak_error_message_fmt( ak_error_get_value(), __func__ , "Update encryption.\nOFB: wrong plain text encryption" );
+    result = ak_false;
+    goto exit;
+  }
+
+  if( !ak_ptr_is_equal(out, out_ofb, 17)) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( out, 17, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( out_ofb, 17, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "Update encryption.\nOFB: the counter mode encryption test from GOST R 34.13-2015 is Ok" );
+
  /* освобождаем ключ и выходим */
   exit:
   if(( error = ak_bckey_destroy( &bkey )) != ak_error_ok ) {

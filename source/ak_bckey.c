@@ -497,7 +497,7 @@
     }
   }
 
-  if( tail ) { /* на последок, мы обрабатываем хвост сообщения */
+  if( tail ) { /* напоследок, мы обрабатываем хвост сообщения */
     size_t i;
     bkey->encrypt( &bkey->key, bkey->ivector.data, yaout );
     for( i = 0; i < tail; i++ )
@@ -512,6 +512,197 @@
 
  return ak_error_ok;
 }
+
+
+int ak_bckey_context_ofb( ak_bckey  bkey, ak_pointer in, ak_pointer out, size_t size, ak_pointer iv, size_t iv_size )
+{
+    ak_int64 blocks = (ak_int64) /* приведение типа */ size / iv_size,
+            tail = (ak_int64) (size % iv_size) / bkey->key.block_size,
+            sub_tail = (ak_int64) (size % iv_size) % bkey->key.block_size,
+            key_blocks = (ak_int64) iv_size/bkey->key.block_size;
+    ak_uint64 yaout[2], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+    ak_buffer_alloc(&bkey->ivector, iv_size);
+    size_t i;
+    /* Проверяем кратность длины сообщения длине синхропосылки */
+    if (!(size % iv_size))
+        /* запрещаем дальнейшее использование ofb_update для данных, длина которых не кратна длине блока */
+        bkey->key.flags |= ak_flag_ofb_update;
+
+    /* проверяем целостность ключа */
+    if( bkey->key.check_icode( &bkey->key ) != ak_true ) /* проверка контрольной суммы ключа */
+        return ak_error_message( ak_error_wrong_key_icode, __func__,
+                                 "incorrect integrity code of secret key value" );
+
+    if( iv_size < ( bkey->ivector.size >> 1 ))
+        return ak_error_message( ak_error_wrong_iv_length, __func__,
+                                 "incorrect length of initial value" );
+    /* уменьшаем значение ресурса ключа */
+    if( bkey->key.resource.counter < ( blocks + ( tail > 0 )))
+        return ak_error_message( ak_error_low_key_resource,
+                                 __func__ , "low resource of block cipher key" );
+
+    else bkey->key.resource.counter -= ( blocks + ( tail > 0 )); /* уменьшаем ресурс ключа */
+
+    /* теперь приступаем к зашифрованию данных */
+    if( bkey->key.flags&ak_flag_ofb_update ) bkey->key.flags ^= ak_flag_ofb_update;
+    memset( bkey->ivector.data, 0, bkey->ivector.size );
+    memcpy(bkey->ivector.data, iv, iv_size);
+
+
+    if( blocks ) {
+        if( bkey->key.block_size == 8 )
+            do {
+                for (i = 1; i <= key_blocks; ++i) {
+                    bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (16 - (bkey->key.block_size * i)), yaout);
+                    *outptr = *inptr ^ yaout[0];
+                    memcpy((ak_uint8 *) bkey->ivector.data + (16 - (bkey->key.block_size * i)), yaout, 16 - bkey->key.block_size);
+                    outptr++; inptr++;
+                }
+            } while( --blocks > 0 );
+
+
+        if( bkey->key.block_size == 16 ) {
+            do {
+                for (i = 1; i <= key_blocks; ++i) {
+                    bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (32 - (bkey->key.block_size * i)), yaout);
+                    *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                    *outptr = *inptr ^ yaout[1]; outptr++; inptr++;
+                    memcpy((ak_uint8 *) bkey->ivector.data + (32 - (bkey->key.block_size * i)), yaout, 32 - bkey->key.block_size);
+                }
+            } while( --blocks > 0 );
+        }
+    }
+
+    if( tail ) { /* напоследок, мы обрабатываем хвост сообщения, длина которого меньше синхропосылки и больше длины блока */
+        if( bkey->key.block_size == 8 )
+            do {
+                bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (16 - (bkey->key.block_size * (key_blocks - 1))), yaout);
+                *outptr = *inptr ^ yaout[0];
+                outptr++; inptr++; key_blocks--;
+            } while( --tail > 0 );
+
+
+        if( bkey->key.block_size == 16 ) {
+            do {
+                bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (32 - (bkey->key.block_size * (key_blocks - 1))), yaout);
+                *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                *outptr = *inptr ^ yaout[1]; outptr++; inptr++;
+                key_blocks--;
+            } while( --tail > 0 );
+        }
+        /* запрещаем дальнейшее использование ofb_update для данных, длина которых не кратна длине блока */
+        if (!sub_tail) {
+            memset(bkey->ivector.data, 0, bkey->ivector.size);
+            bkey->key.flags |= ak_flag_ofb_update;
+        }
+    }
+
+    if (sub_tail) { /* здесь мы обрабатываем хвост сообщения, длина которого меньше синхропосылки и меньше длины блока */
+        bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + bkey->key.block_size * (--key_blocks), yaout);
+        for (i = 0; i < sub_tail; i++)
+            ((ak_uint8 *) outptr)[i] = ((ak_uint8 *) inptr)[i] ^ ((ak_uint8 *) yaout)[i];
+        /* запрещаем дальнейшее использование ofb_update для данных, длина которых не кратна длине блока */
+        memset(bkey->ivector.data, 0, bkey->ivector.size);
+        bkey->key.flags |= ak_flag_ofb_update;
+    }
+
+
+    /* перемаскируем ключ */
+    if( bkey->key.remask( &bkey->key ) != ak_error_ok )
+        return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+    return ak_error_ok;
+}
+
+
+int ak_bckey_context_ofb_update( ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size ) {
+    ak_int64 blocks = (ak_int64)  size / bkey->ivector.size,
+            tail = (ak_int64) (size % bkey->ivector.size) / bkey->key.block_size,
+            sub_tail = (ak_int64) (size % bkey->ivector.size) % bkey->key.block_size,
+            key_blocks = (ak_int64) bkey->ivector.size/bkey->key.block_size;
+    ak_uint64 yaout[2], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+    size_t i;
+
+    /* Проверка на использование update */
+    if (bkey->key.flags & ak_flag_ofb_update)
+        return ak_error_message(ak_error_wrong_block_cipher_function, __func__,
+                                "using this function with previously incorrect ofb operation");
+
+
+    /* проверяем целостность ключа */
+    if (bkey->key.check_icode(&bkey->key) != ak_true)
+        return ak_error_message(ak_error_wrong_key_icode, __func__,
+                                "incorrect integrity code of secret key value");
+    /* уменьшаем значение ресурса ключа */
+    if (bkey->key.resource.counter < (blocks + (tail > 0)))
+        return ak_error_message(ak_error_low_key_resource,
+                                __func__, "low resource of block cipher key");
+    else bkey->key.resource.counter -= (blocks + (tail > 0));
+    if( blocks ) {
+        if( bkey->key.block_size == 8 )
+            do {
+                for (i = 1; i <= key_blocks; ++i) {
+                    bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (16 - (bkey->key.block_size * i)), yaout);
+                    *outptr = *inptr ^ yaout[0];
+                    memcpy((ak_uint8 *) bkey->ivector.data + (16 - (bkey->key.block_size * i)), yaout, bkey->ivector.size - bkey->key.block_size);
+                    outptr++; inptr++;
+                }
+            } while (--blocks > 0);
+
+
+        if( bkey->key.block_size == 16 ) {
+            do {
+                for (i = 1; i <= key_blocks; ++i) {
+                    bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (32 - (bkey->key.block_size * i)), yaout);
+                    *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                    *outptr = *inptr ^ yaout[1]; outptr++; inptr++;
+                    memcpy((ak_uint8 *) bkey->ivector.data + (32 - (bkey->key.block_size * i)), yaout, bkey->ivector.size - bkey->key.block_size);
+                }
+            } while( --blocks > 0 );
+        }
+    }
+
+    if( tail ) { /* напоследок, мы обрабатываем хвост сообщения, длина которого меньше синхропосылки и больше длины блока */
+        if( bkey->key.block_size == 8 )
+            do {
+                bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (16 - (bkey->key.block_size * (key_blocks - 1))), yaout);
+                *outptr = *inptr ^ yaout[0];
+                outptr++; inptr++; key_blocks--;
+            } while( --tail > 0 );
+
+
+        if( bkey->key.block_size == 16 ) {
+            do {
+                bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + (32 - (bkey->key.block_size * (key_blocks - 1))), yaout);
+                *outptr = *inptr ^ yaout[0]; outptr++; inptr++;
+                *outptr = *inptr ^ yaout[1]; outptr++; inptr++;
+                key_blocks--;
+            } while( --tail > 0 );
+        }
+        /* запрещаем дальнейшее использование ofb_update для данных, длина которых не кратна длине блока */
+        if (!sub_tail) {
+            memset(bkey->ivector.data, 0, bkey->ivector.size);
+            bkey->key.flags |= ak_flag_ofb_update;
+        }
+    }
+
+    if (sub_tail) { /* здесь мы обрабатываем хвост сообщения, длина которого меньше синхропосылки и меньше длины блока */
+        bkey->encrypt(&bkey->key, (ak_uint8 *) bkey->ivector.data + bkey->key.block_size * (key_blocks - 1), yaout);
+        for (i = 0; i < sub_tail; i++)
+            ((ak_uint8 *) outptr)[i] = ((ak_uint8 *) inptr)[i] ^ ((ak_uint8 *) yaout)[i];
+        /* запрещаем дальнейшее использование ofb_update для данных, длина которых не кратна длине блока */
+        memset(bkey->ivector.data, 0, bkey->ivector.size);
+        bkey->key.flags |= ak_flag_ofb_update;
+    }
+
+
+    /* перемаскируем ключ */
+    if( bkey->key.remask( &bkey->key ) != ak_error_ok ) // ключ^маска; ключ в явном в виде не хранится
+        return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+    return ak_error_ok;
+}
+
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \example example-bckey-internal.c                                                              */
