@@ -607,7 +607,8 @@
   }
   if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                                      "the counter mode decryption test from GOST R 34.13-2015 is Ok" );
-    /* 6. Тестируем режим гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015 */
+
+ /* 6. Тестируем режим гаммирования с обратной связью по шифртексту согласно ГОСТ Р34.13-2015 */
   if( ak_bckey_context_encrypt_cfb( &bkey, in_3413_2015_text, out, 32, cfb_iv, 16) != ak_error_ok ) {
     ak_error_message_fmt( ak_error_get_value(), __func__ , "wrong plain text cfb encryption" );
     result = ak_false;
