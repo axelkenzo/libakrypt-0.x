@@ -174,6 +174,7 @@ set( EXAMPLES_LIST hello
                    oid
                    hash
                    hash-oids
+                   test
 )
 
 # организуем сборку примеров со статической линковкой

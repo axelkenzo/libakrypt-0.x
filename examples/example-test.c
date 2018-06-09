@@ -51,10 +51,38 @@
     }
  } while( len );
  time = clock() - time;
- printf(" time: %fs, per 1MB = %fs, %f MBs\n\n",
+ printf(" magma time: %fs, per 1MB = %fs, %f MBs\n\n",
                (double) time / (double) CLOCKS_PER_SEC,
                (double) time / ( (double) CLOCKS_PER_SEC * mbsize ), (double) CLOCKS_PER_SEC *mbsize / (double) time );
 
+ fclose( fp );
+ fclose( fq );
+ ak_bckey_destroy( &key );
+  
+ /* ключ */
+ ak_bckey_create_masked_magma( &key );
+ ak_bckey_context_set_password( &key, "password", 8, "12345", 5 );
+
+ fp = fopen( "data.dat", "rb" );
+ fq = fopen( "data.dat.enc.magma.masked", "wb" );
+
+ time = clock();
+ len = fread( buffer, 1, 1024, fp );
+ if( len > 0 ) {
+   ak_bckey_context_xcrypt( &key, buffer, buffer, len, "12345678", 8 );
+   fwrite( buffer, 1, len, fq );
+ }
+ do{
+    if(( len = fread( buffer, 1, 1024, fp )) > 0 ) {
+      ak_bckey_context_xcrypt_update( &key, buffer, buffer, len );
+      fwrite( buffer, 1, len, fq );
+    }
+ } while( len );
+ time = clock() - time;
+ printf(" masked magma time: %fs, per 1MB = %fs, %f MBs\n\n",
+         (double) time / (double) CLOCKS_PER_SEC,
+         (double) time / ( (double) CLOCKS_PER_SEC * mbsize ), (double) CLOCKS_PER_SEC *mbsize / (double) time );
+  
  fclose( fp );
  fclose( fq );
  ak_bckey_destroy( &key );
@@ -80,7 +108,7 @@
     }
  } while( len );
  time = clock() - time;
- printf(" time: %fs, per 1MB = %fs, %f MBs\n\n",
+ printf(" kuznechik time: %fs, per 1MB = %fs, %f MBs\n\n",
                (double) time / (double) CLOCKS_PER_SEC,
                (double) time / ( (double) CLOCKS_PER_SEC * mbsize ), (double) CLOCKS_PER_SEC *mbsize / (double) time );
 

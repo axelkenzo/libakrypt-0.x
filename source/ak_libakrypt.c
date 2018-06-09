@@ -567,6 +567,12 @@
     return ak_false;
   }
 
+ /* тестируем корректность маскированной реализации блочного шифра Магма */
+  if( ak_bckey_test_masked_magma() != ak_true ) {
+    ak_error_message( ak_error_get_value(), __func__ , "incorrect testing of masked magma block cipher" );
+    return ak_false;
+  }
+
  /* инициализируем константные таблицы для алгоритма Кузнечик */
   if( ak_bckey_init_kuznechik_tables()  != ak_true ) {
     ak_error_message( ak_error_get_value(), __func__ ,
