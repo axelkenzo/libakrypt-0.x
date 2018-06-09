@@ -513,6 +513,519 @@
  return ak_error_ok;
 }
 
+
+/* ----------------------------------------------------------------------------------------------- */
+/*!Операция зашифрования текста с помощью режима простой замены с зацеплением.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование/расшифрование информации.
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные.
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in).
+    @param size Размер зашировываемых данных (в байтах).
+    @param iv Синхропосылка.
+    @param iv_size Длина синхропосылки (в байтах).
+
+    Значение синхропосылки преобразуется и сохраняется в контексте секретного ключа. Данное значение
+    может быть использовано в дальнейшем при вызове функции ak_bckey_context_encrypt_cbc_update().
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+ int ak_bckey_context_encrypt_cbc(ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size,
+                                  ak_pointer iv, size_t iv_size)
+{
+  ak_int64 blocks = size/iv_size, tail = (size%iv_size)/8;
+  ak_uint64 yaout[2], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+
+  ak_buffer_alloc(&bkey->ivector, iv_size);
+
+  /* проверяем целостность ключа */
+  if( bkey->key.check_icode( &bkey->key ) != ak_true )
+    return ak_error_message( ak_error_wrong_key_icode, __func__,
+                             "incorrect integrity code of secret key value" );
+
+  /* уменьшаем значение ресурса ключа */
+  if( bkey->key.resource.counter < ( blocks + ( tail > 0 )))
+    return ak_error_message( ak_error_low_key_resource,
+                             __func__ , "low resource of block cipher key" );
+  else bkey->key.resource.counter -= ( blocks + ( tail > 0 )); /* уменьшаем ресурс ключа */
+
+  /* теперь приступаем к зашифрованию данных */
+  if( bkey->key.flags&ak_flag_cbc_update) bkey->key.flags ^= ak_flag_cbc_update;
+
+  if(bkey->key.oid == ak_oid_find_by_name( "magma" )){
+    if(size % 8 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+    memcpy( bkey->ivector.data, iv, bkey->ivector.size );
+    ak_int64 m = iv_size/(ak_int64)8;
+    for(int i=0;i<blocks;i++){
+      for(int j=m-1;j>=0;j--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[j] ^ *inptr;
+        bkey->encrypt( &bkey->key, &temp, yaout );
+        *outptr = yaout[0];
+        outptr++; inptr++;
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , yaout, 8 );
+      }
+    }
+
+    if(tail > 0){
+      ak_int64 k = iv_size/(ak_int64)8-1;
+      for(int i=tail;i>0;i--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[k] ^ *inptr;
+        bkey->encrypt( &bkey->key, &temp, yaout );
+        *outptr = yaout[0];
+        outptr++; inptr++;
+        k--;
+      }
+      memset( bkey->ivector.data, 0, bkey->ivector.size );
+      bkey->key.flags |= ak_flag_cbc_update;
+    }
+
+  }
+
+  if(bkey->key.oid == ak_oid_find_by_name( "kuznechik" )){
+    if(size % 16 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+
+    memcpy( bkey->ivector.data, iv, bkey->ivector.size );
+    ak_uint64 temp[2];
+    ak_int64 m = iv_size/(ak_int64)8;
+
+    for(int i=0;i<blocks;i++){
+
+      for(int j=m-1;j>=1;j--){
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[j-1] ^ *inptr;
+        inptr++;
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[j] ^ *inptr;
+        inptr++;
+        bkey->encrypt( &bkey->key, &temp, yaout );
+        *outptr = yaout[0];
+        outptr++;
+        *outptr = yaout[1];
+        outptr++;
+        j--;
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , yaout, 16 );
+      }
+
+    }
+
+    if(tail > 0){
+
+      ak_int64 k = iv_size/(ak_int64)8-1;
+
+      for(int i=tail;i>1;i--){
+
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[k-1] ^ *inptr;
+        inptr++;
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[k] ^ *inptr;
+        inptr++;
+
+        bkey->encrypt( &bkey->key, &temp, yaout );
+
+        *outptr = yaout[0];
+        outptr++;
+        *outptr = yaout[1];
+        outptr++;
+
+        k-=2;
+        i--;
+
+      }
+      memset( bkey->ivector.data, 0, bkey->ivector.size );
+      bkey->key.flags |= ak_flag_cbc_update;
+    }
+
+  }
+
+  /* перемаскируем ключ */
+  if( bkey->key.remask( &bkey->key ) != ak_error_ok )
+    return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+  return ak_error_ok;
+}
+/* ----------------------------------------------------------------------------------------------- */
+/*!Операция расшифрования текста с помощью режима простой замены с зацеплением.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование/расшифрование информации.
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные.
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in).
+    @param size Размер зашировываемых данных (в байтах).
+    @param iv Синхропосылка.
+    @param iv_size Длина синхропосылки (в байтах).
+
+    Значение синхропосылки преобразуется и сохраняется в контексте секретного ключа. Данное значение
+    может быть использовано в дальнейшем при вызове функции ak_bckey_context_decrypt_cbc_update().
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_decrypt_cbc(ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size,
+                                 ak_pointer iv, size_t iv_size)
+{
+  ak_int64 blocks = size/iv_size, tail = (size%iv_size)/8;
+  ak_uint64 yaout[2], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+
+  ak_buffer_alloc(&bkey->ivector, iv_size);
+  /* проверяем целостность ключа */
+  if( bkey->key.check_icode( &bkey->key ) != ak_true )
+    return ak_error_message( ak_error_wrong_key_icode, __func__,
+                             "incorrect integrity code of secret key value" );
+
+  /* уменьшаем значение ресурса ключа */
+  if( bkey->key.resource.counter < ( blocks + ( tail > 0 )))
+    return ak_error_message( ak_error_low_key_resource,
+                             __func__ , "low resource of block cipher key" );
+  else bkey->key.resource.counter -= ( blocks + ( tail > 0 )); /* уменьшаем ресурс ключа */
+
+  /* теперь приступаем к зашифрованию данных */
+  if( bkey->key.flags&ak_flag_cbc_update ) bkey->key.flags ^= ak_flag_cbc_update;
+
+  if(bkey->key.oid == ak_oid_find_by_name( "magma" )){
+    if(size % 8 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+
+    memcpy( bkey->ivector.data, iv, bkey->ivector.size );
+    ak_int64 m = iv_size/(ak_int64)8;
+    for(int i=0;i<blocks;i++){
+      for(int j=m-1;j>=0;j--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[j];
+        bkey->decrypt( &bkey->key, inptr, yaout );
+        *outptr = yaout[0]^ temp;
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , inptr, 8 );
+        outptr++; inptr++;
+      }
+    }
+
+    if(tail > 0){
+      ak_int64 k = iv_size/(ak_int64)8-1;
+      for(int i=tail;i>0;i--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[k];
+        bkey->decrypt( &bkey->key, inptr, yaout );
+        *outptr = yaout[0]^temp;
+        outptr++; inptr++;
+        k--;
+      }
+      memset( bkey->ivector.data, 0, bkey->ivector.size );
+      bkey->key.flags |= ak_flag_cbc_update;
+    }
+
+  }
+
+  if(bkey->key.oid == ak_oid_find_by_name( "kuznechik" )){
+    if(size % 16 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+
+    memcpy( bkey->ivector.data, iv, bkey->ivector.size );
+    ak_uint64 temp[2];
+    ak_int64 m = iv_size/(ak_int64)8;
+
+    for(int i=0;i<blocks;i++){
+      for(int j=m-1;j>=1;j--){
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[j-1];
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[j];
+        bkey->decrypt( &bkey->key, inptr, yaout );
+        *outptr = yaout[0] ^ temp[0];
+        outptr++;
+        *outptr = yaout[1] ^ temp[1];
+        outptr++;
+        j--;\
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , inptr, 16 );
+        inptr++;inptr++;
+      }
+
+    }
+
+    if(tail > 0){
+
+      ak_int64 k = iv_size/(ak_int64)8-1;
+
+      for(int i=tail;i>1;i--){
+
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[k-1];
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[k];
+
+        bkey->decrypt( &bkey->key, inptr, yaout );
+
+        *outptr = yaout[0]^temp[0];
+        outptr++;
+        *outptr = yaout[1]^temp[1];
+        outptr++;
+        inptr++;inptr++;
+
+        k-=2;
+        i--;
+
+      }
+      memset( bkey->ivector.data, 0, bkey->ivector.size );
+      bkey->key.flags |= ak_flag_cbc_update;
+    }
+
+  }
+
+  /* перемаскируем ключ */
+  if( bkey->key.remask( &bkey->key ) != ak_error_ok )
+    return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+  return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Функция позволяет зашифровывать данные после вызова функции ak_bckey_context_encrypt_cbc()
+    со значением синхропосылки, выработанной в ходе предыдущего вызова. Это позволяет
+    зашифровывать данные поступающие блоками, длина которых кратна длине блока
+    используемого алгоритма блочного шифрования.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование информации
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in)
+    @param size Размер зашировываемых данных (в байтах)
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_encrypt_cbc_update(ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size)
+{
+  /* проверяем, что мы можем использовать данный режим */
+  if( bkey->key.flags&ak_flag_cbc_update )
+    return ak_error_message( ak_error_wrong_block_cipher_function, __func__ ,
+                             "using this function with previously incorrect xcrypt operation");
+  /* проверяем целостность ключа */
+  if( bkey->key.check_icode( &bkey->key ) != ak_true )
+    return ak_error_message( ak_error_wrong_key_icode, __func__,
+                             "incorrect integrity code of secret key value" );
+
+  ak_int64 blocks, tail;
+  ak_uint64 yaout[2], *inptr = (ak_uint64 *)in, *outptr = (ak_uint64 *)out;
+
+  if(bkey->key.oid == ak_oid_find_by_name( "magma" )){
+    if(size % 8 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+
+    blocks = size/bkey->ivector.size;
+    ak_int64 m = bkey->ivector.size/(ak_int64)8;
+    tail = (size%bkey->ivector.size)/8;
+    for(int i=0;i<blocks;i++){
+      for(int j=m-1;j>=0;j--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[j] ^ *inptr;
+        bkey->encrypt( &bkey->key, &temp, yaout );
+        *outptr = yaout[0];
+        outptr++; inptr++;
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , yaout, 8 );
+      }
+    }
+
+    if(tail > 0){
+      ak_int64 k = bkey->ivector.size/(ak_int64)8-1;
+      for(int i=tail;i>0;i--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[k] ^ *inptr;
+        bkey->encrypt( &bkey->key, &temp, yaout );
+        *outptr = yaout[0];
+        outptr++; inptr++;
+        k--;
+      }
+      memset( bkey->ivector.data, 0, bkey->ivector.size );
+      bkey->key.flags |= ak_flag_cbc_update;
+    }
+
+  }
+
+  if(bkey->key.oid == ak_oid_find_by_name( "kuznechik" )){
+    if(size % 16 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+
+    ak_uint64 temp[2];
+    blocks = size/bkey->ivector.size;
+    ak_int64 m = bkey->ivector.size/(ak_int64)8;
+    tail = (size%bkey->ivector.size)/8;
+
+    for(int i=0;i<blocks;i++){
+
+      for(int j=m-1;j>=1;j--){
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[j-1] ^ *inptr;
+        inptr++;
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[j] ^ *inptr;
+        inptr++;
+        bkey->encrypt( &bkey->key, &temp, yaout );
+        *outptr = yaout[0];
+        outptr++;
+        *outptr = yaout[1];
+        outptr++;
+        j--;
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , yaout, 16 );
+      }
+
+    }
+
+    if(tail > 0){
+      ak_int64 k = bkey->ivector.size/(ak_int64)8-1;
+
+      for(int i=tail;i>1;i--){
+
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[k-1] ^ *inptr;
+        inptr++;
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[k] ^ *inptr;
+        inptr++;
+        bkey->encrypt( &bkey->key, &temp, yaout );
+
+        *outptr = yaout[0];
+        outptr++;
+        *outptr = yaout[1];
+        outptr++;
+
+        k-=2;
+        i--;
+
+      }
+      memset( bkey->ivector.data, 0, bkey->ivector.size );
+      bkey->key.flags |= ak_flag_cbc_update;
+    }
+  }
+  /* перемаскируем ключ */
+  if( bkey->key.remask( &bkey->key ) != ak_error_ok )
+    return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+  return ak_error_ok;
+}
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! Функция позволяет расшифровывать данные после вызова функции ak_bckey_context_decrypt_cbc()
+    со значением синхропосылки, выработанной в ходе предыдущего вызова. Это позволяет
+    расшифровывать данные поступающие блоками, длина которых кратна длине блока
+    используемого алгоритма блочного шифрования.
+
+    @param bkey Ключ алгоритма блочного шифрования, на котором происходит зашифрование информации
+    @param in Указатель на область памяти, где хранятся входные (открытые) данные
+    @param out Указатель на область памяти, куда помещаются зашифрованные данные
+    (этот указатель может совпадать с in)
+    @param size Размер зашировываемых данных (в байтах)
+
+    @return В случае возникновения ошибки функция возвращает ее код, в противном случае
+    возвращается ak_error_ok (ноль)                                                                */
+/* ----------------------------------------------------------------------------------------------- */
+int ak_bckey_context_decrypt_cbc_update(ak_bckey bkey, ak_pointer in, ak_pointer out, size_t size)
+{
+  /* проверяем, что мы можем использовать данный режим */
+  if (bkey->key.flags & ak_flag_cbc_update)
+    return ak_error_message(ak_error_wrong_block_cipher_function, __func__,
+                            "using this function with previously incorrect xcrypt operation");
+  /* проверяем целостность ключа */
+  if (bkey->key.check_icode(&bkey->key) != ak_true)
+    return ak_error_message(ak_error_wrong_key_icode, __func__,
+                            "incorrect integrity code of secret key value");
+
+  ak_int64 blocks, tail;
+  ak_uint64 yaout[2], *inptr = (ak_uint64 *) in, *outptr = (ak_uint64 *) out;
+
+  if(bkey->key.oid == ak_oid_find_by_name( "magma" )){
+    if(size % 8 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+
+    blocks = size/bkey->ivector.size;
+    ak_int64 m = bkey->ivector.size/(ak_int64)8;
+    tail = (size%bkey->ivector.size)/8;
+    for(int i=0;i<blocks;i++){
+      for(int j=m-1;j>=0;j--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[j];
+        bkey->decrypt( &bkey->key, inptr, yaout );
+        *outptr = yaout[0]^ temp;
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , inptr, 8 );
+        outptr++; inptr++;
+      }
+    }
+
+    if(tail > 0){
+      ak_int64 k = bkey->ivector.size/(ak_int64)8-1;
+      for(int i=tail;i>0;i--){
+        ak_uint64 temp = ((ak_uint64 *)bkey->ivector.data)[k];
+        bkey->decrypt( &bkey->key, inptr, yaout );
+        *outptr = yaout[0]^temp;
+        outptr++; inptr++;
+        k--;
+      }
+    }
+    memset( bkey->ivector.data, 0, bkey->ivector.size );
+    bkey->key.flags |= ak_flag_cbc_update;
+  }
+
+  if(bkey->key.oid == ak_oid_find_by_name( "kuznechik" )){
+    if(size % 16 != 0){
+      return ak_error_message( ak_error_message_wrong_size,
+                               __func__ , "incorrect length of input message" );
+    }
+
+    ak_uint64 temp[2];
+    blocks = size/bkey->ivector.size;
+    ak_int64 m = bkey->ivector.size/(ak_int64)8;
+    tail = (size%bkey->ivector.size)/8;
+
+    for(int i=0;i<blocks;i++){
+
+      for(int j=m-1;j>=1;j--){
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[j-1];
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[j];
+        bkey->decrypt( &bkey->key, inptr, yaout );
+        *outptr = yaout[0] ^ temp[0];
+        outptr++;
+        *outptr = yaout[1] ^ temp[1];
+        outptr++;
+        j--;
+        memcpy( (ak_uint8 *)bkey->ivector.data + (j)*8 , inptr, 16 );
+        inptr++;inptr++;
+      }
+
+    }
+
+    if(tail > 0){
+
+      ak_int64 k = bkey->ivector.size/(ak_int64)8-1;
+
+      for(int i=tail;i>1;i--){
+
+        temp[0] = ((ak_uint64 *)bkey->ivector.data)[k-1];
+        temp[1] = ((ak_uint64 *)bkey->ivector.data)[k];
+
+        bkey->decrypt( &bkey->key, inptr, yaout );
+
+        *outptr = yaout[0]^temp[0];
+        outptr++;
+        *outptr = yaout[1]^temp[1];
+        outptr++;
+        inptr++;inptr++;
+
+        k-=2;
+        i--;
+
+      }
+      memset( bkey->ivector.data, 0, bkey->ivector.size );
+      bkey->key.flags |= ak_flag_cbc_update;
+    }
+
+  }
+
+  /* перемаскируем ключ */
+  if( bkey->key.remask( &bkey->key ) != ak_error_ok )
+    return ak_error_message( ak_error_get_value(), __func__ , "wrong remasking of secret key" );
+
+  return ak_error_ok;
+
+}
+
 /* ----------------------------------------------------------------------------------------------- */
 /*! \example example-bckey-internal.c                                                              */
 /* ----------------------------------------------------------------------------------------------- */

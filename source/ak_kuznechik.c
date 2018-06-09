@@ -603,8 +603,19 @@
     0xb9d4edcd, 0x5a468d42, 0xbebc2430, 0x7f679d90, 0x6718d08b, 0x285452d7, 0x6e0032f9, 0xb429912c,
     0x3bd4b157, 0xf3f5a531, 0x9d247cee, 0xf0ca3354, 0xaa8ada98, 0x3a02c4c5, 0xe830b9eb, 0xd0b09ccd };
 
- /* инициализационный вектор для режима гаммирования (счетчика) */
+ /* результат зашифрования в режиме простой замены с зацеплением */
+  ak_uint32 outofb[16] = {
+      0x6d7dcc27, 0x90e52e3d, 0xa085fa4d, 0x689972d4, 0x8d5ea5ac, 0xaf1e8e44, 0xb478eca6, 0x2826e661,
+      0xf49d90d0, 0x5640e8b0, 0xe91999e8, 0xfe7babf1, 0x60b63970, 0x1a2d9a15, 0x5a895c63, 0x16768806 };
+
+
+  /* инициализационный вектор для режима гаммирования (счетчика) */
   ak_uint8 ivctr[8] = { 0xf0, 0xce, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12 };
+  /* инициализационный вектор для режима простой замены с зацеплением */
+  ak_uint8 ofb_iv[32] = {0x19, 0x18, 0x17, 0x16, 0x15, 0x14, 0x13, 0x12,
+                         0x90, 0x89, 0x78, 0x67, 0x56, 0x45, 0x34, 0x23,
+                         0x12, 0x01, 0xf0, 0xe5, 0xd4, 0xc3, 0xb2, 0xa1,
+                         0xf0, 0xce, 0xab, 0x90, 0x78, 0x56, 0x34, 0x12};
 
  /* результат зашифрования в режиме гаммирования (счетчика) */
   ak_uint32 outctr[16] = {
@@ -715,7 +726,146 @@
   if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
                            "the counter mode decryption test from GOST R 34.13-2015 is Ok" );
 
- /* уничтожаем ключ и выходим */
+  /* 5. Тестируем режим простой замены с зацеплением согласно ГОСТ Р34.13-2015 */
+  /*encrypt*/
+  if(( error = ak_bckey_context_encrypt_cbc(&bkey, inlong, myout, 64, ofb_iv, sizeof(ofb_iv))) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode encryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, outofb, 64 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cipher block chaining mode encryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 64, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( outofb, 64, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "the cipher block chaining mode encryption test from GOST R 34.13-2015 is Ok" );
+
+  /* decrypt */
+  if(( error = ak_bckey_context_decrypt_cbc(&bkey, outofb, myout, 64, ofb_iv, sizeof(ofb_iv))) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode decryption" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, inlong, 64 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cipher block chaining mode decryption test from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 64, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( ofb_iv, 64, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "the cipher block chaining mode decryption test from GOST R 34.13-2015 is Ok" );
+
+  /* 6. Тестируем режим простой замены с зацеплением с применением update_encrypt */
+  if(( error = ak_bckey_context_encrypt_cbc(&bkey, inlong, myout, 32, ofb_iv, sizeof(ofb_iv))) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode encryption 32" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if(( error = ak_bckey_context_encrypt_cbc_update(&bkey, inlong + 8, myout + 32, 32)) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode update_encrypt 32" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, outofb, 64 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cipher block chaining mode encryption test2 from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 64, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( outofb, 64, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "the cipher block chaining mode encryption with update test from GOST R 34.13-2015 is Ok" );
+
+  /* 7. Тестируем режим простой замены с зацеплением с применением update_decrypt */
+  if(( error = ak_bckey_context_decrypt_cbc(&bkey, outofb, myout, 32, ofb_iv, sizeof(ofb_iv))) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode decryption 32" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if(( error = ak_bckey_context_decrypt_cbc_update(&bkey, outofb + 8, myout + 32, 32)) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode update_decrypt 32" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, inlong, 64 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cipher block chaining mode encryption test3 from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 64, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( outofb, 64, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "the cipher block chaining mode decryption with update test from GOST R 34.13-2015 is Ok" );
+
+  /* 8. Тестируем режим простой замены с зацеплением с применением update_encrypt */
+  if(( error = ak_bckey_context_encrypt_cbc(&bkey, inlong, myout, 32, ofb_iv, sizeof(ofb_iv))) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode encryption 32" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if(( error = ak_bckey_context_encrypt_cbc_update(&bkey, inlong + 8, myout + 32, 16)) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode update_encrypt 16" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, outofb, 48 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cipher block chaining mode encryption test4 from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 64, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( outofb, 64, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "the cipher block chaining mode encryption with update test2 from GOST R 34.13-2015 is Ok" );
+
+  /* 9. Тестируем режим простой замены с зацеплением с применением update_decrypt */
+  if(( error = ak_bckey_context_decrypt_cbc(&bkey, outofb, myout, 32, ofb_iv, sizeof(ofb_iv))) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode decryption 32" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if(( error = ak_bckey_context_decrypt_cbc_update(&bkey, outofb + 8, myout + 32, 16)) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode update_decrypt 16" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, inlong, 48 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cipher block chaining mode encryption test5 from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 48, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( outofb, 48, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "the cipher block chaining mode decryption with update test2 from GOST R 34.13-2015 is Ok" );
+  /* 10. Тестируем режим простой замены с зацеплением, шифрование 32 */
+  if(( error = ak_bckey_context_encrypt_cbc(&bkey, inlong, myout, 32, ofb_iv, sizeof(ofb_iv))) != ak_error_ok ) {
+    ak_error_message_fmt( error, __func__ , "wrong cipher block chaining mode encryption 32" );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( !ak_ptr_is_equal( myout, outofb, 32 )) {
+    ak_error_message_fmt( ak_error_not_equal_data, __func__ ,
+                          "the cipher block chaining mode encryption test6 from GOST R 34.13-2015 is wrong");
+    ak_log_set_message( str = ak_ptr_to_hexstr( myout, 32, ak_true )); free( str );
+    ak_log_set_message( str = ak_ptr_to_hexstr( outofb, 32, ak_true )); free( str );
+    ak_bckey_destroy( &bkey );
+    return ak_false;
+  }
+  if( audit >= ak_log_maximum ) ak_error_message( ak_error_ok, __func__ ,
+                                                  "the cipher block chaining mode encryption of first 32 from GOST R 34.13-2015 is Ok" );
+
+  /* уничтожаем ключ и выходим */
   ak_bckey_destroy( &bkey );
  return ak_true;
 }

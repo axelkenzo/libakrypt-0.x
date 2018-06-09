@@ -94,7 +94,14 @@
  int ak_bckey_context_xcrypt( ak_bckey , ak_pointer , ak_pointer , size_t , ak_pointer , size_t );
 /*! \brief Дальнейшее зашифрование/расшифрование в режиме гаммирования из ГОСТ Р 34.13-2015. */
  int ak_bckey_context_xcrypt_update( ak_bckey , ak_pointer , ak_pointer , size_t );
-
+/*! \brief Зашифрование данных в режиме простой замены с зацеплением. */
+int ak_bckey_context_encrypt_cbc(ak_bckey, ak_pointer, ak_pointer, size_t, ak_pointer, size_t);
+/*! \brief Расшифрование данных в режиме простой замены с зацеплением. */
+int ak_bckey_context_decrypt_cbc(ak_bckey, ak_pointer, ak_pointer, size_t, ak_pointer, size_t);
+/*! \brief Дальнейшее зашифрование в режиме простой замены с зацеплением из ГОСТ Р 34.13-2015. */
+int ak_bckey_context_encrypt_cbc_update(ak_bckey, ak_pointer, ak_pointer, size_t);
+/*! \brief Дальнейшее расшифрование в режиме простой замены с зацеплением из ГОСТ Р 34.13-2015. */
+int ak_bckey_context_decrypt_cbc_update(ak_bckey, ak_pointer, ak_pointer, size_t);
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Тестирование корректной работы алгоритма блочного шифрования Магма. */
  ak_bool ak_bckey_test_magma( void );
