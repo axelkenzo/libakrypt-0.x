@@ -11,7 +11,7 @@
     return ak_libakrypt_destroy();
 
  /* создаем генератор, предоставляющий интерфейс к системному генератору */
-#ifdef __unix__
+#if defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))
   if(( handle = ak_random_new_dev_random( )) == ak_error_wrong_handle )
     return ak_libakrypt_destroy();
   printf("use a dev-random generator\n");
@@ -21,7 +21,7 @@
     return ak_libakrypt_destroy();
   printf("use a generator from default (RSA_PROV) Windows crypto provider\n");
 #endif
-#if !defined(__unix__) && !defined(_WIN32)
+#if !(defined(__unix__) || defined(__unix) || (defined(__APPLE__) && defined(__MACH__))) && !defined(_WIN32)
   return ak_libakrypt_destroy();
 #endif
 
