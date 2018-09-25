@@ -21,6 +21,9 @@
     return ak_libakrypt_destroy();
   printf("use a generator from default (RSA_PROV) Windows crypto provider\n");
 #endif
+#if !defined(__unix__) && !defined(_WIN32)
+  return ak_libakrypt_destroy();
+#endif
 
  /* вырабатываем случайные данные блоками по 32 байта и выводим их в консоль */
   for( i = 0; i < 4; i++ ) {
