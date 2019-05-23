@@ -33,7 +33,11 @@
 /* ----------------------------------------------------------------------------------------------- */
 static ak_uint64 ROT64(ak_uint64 x, ak_uint64 y)
 {
+#ifdef LIBAKRYPT_LITTLE_ENDIAN
+    return (((x) << y) | ((x) >> (64 - y)));
+#else
     return bswap_64((bswap_64(x) << y) | (bswap_64(x) >> (64 - y)));
+#endif
 }
 
 //static void printIntInMem(ak_uint64 x)
@@ -87,7 +91,11 @@ static inline void keccak_permut(ak_uint64 state[25])
                 state[j + i] ^= (~bc[(i + 1) % 5]) & bc[(i + 2) % 5];
         }
         /* ι */
+    #ifdef LIBAKRYPT_LITTLE_ENDIAN
+        state[0] ^= keccakf_rc[r];
+    #else
         state[0] ^= keccakf_rc_be[r];
+    #endif
     }
 }
 /* ----------------------------------------------------------------------------------------------- */
@@ -157,20 +165,6 @@ static int ak_hash_sha3_update(ak_pointer ctx, const ak_pointer in, const size_t
 /* ----------------------------------------------------------------------------------------------- */
 static ak_buffer ak_hash_sha3_finalize(ak_pointer ctx, const ak_pointer in, const size_t size, ak_pointer out )
 {
-
-    /*printf("Input Data\nHEX:\n");
-    for(size_t i = 0; i < size; i++)
-    {
-        printf("%02X ", *((char*)in + i));
-    }
-    printf("\n");
-
-    printf("ASCII:\n");
-    for(size_t i = 0; i < size; i++)
-    {
-        printf("%c", *((char*)in + i));
-    }
-    printf("\n"); */
 
     ak_pointer pout = NULL;
     ak_buffer result = NULL;
