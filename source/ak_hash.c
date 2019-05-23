@@ -260,7 +260,36 @@
 {
  return ak_hash_new_oid_ni( "streebog512", description );
 }
-
+/* ----------------------------------------------------------------------------------------------- */
+ak_handle ak_hash_new_sha3_224( const char *description )
+{
+    return ak_hash_new_oid_ni( "sha3_224", description );
+}
+/* ----------------------------------------------------------------------------------------------- */
+ak_handle ak_hash_new_sha3_256( const char *description )
+{
+    return ak_hash_new_oid_ni( "sha3_256", description );
+}
+/* ----------------------------------------------------------------------------------------------- */
+ak_handle ak_hash_new_sha3_384( const char *description )
+{
+    return ak_hash_new_oid_ni( "sha3_384", description );
+}
+/* ----------------------------------------------------------------------------------------------- */
+ak_handle ak_hash_new_sha3_512( const char *description )
+{
+    return ak_hash_new_oid_ni( "sha3_512", description );
+}
+/* ----------------------------------------------------------------------------------------------- */
+ak_handle ak_hash_new_shake128( const char *description )
+{
+    return ak_hash_new_oid_ni( "shake128", description );
+}
+/* ----------------------------------------------------------------------------------------------- */
+ak_handle ak_hash_new_shake256( const char *description )
+{
+    return ak_hash_new_oid_ni( "shake256", description );
+}
 /* ----------------------------------------------------------------------------------------------- */
 /*! @param handle Дескриптор контекста функции хеширования.
     @return Функция возвращает количество байт, которые занимает результат примения функции

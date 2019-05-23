@@ -139,6 +139,43 @@
     return ak_false;
   }
 
+  /* тестируем функцию SHA3-224 */
+    if( ak_hash_test_sha3_224() != ak_true )
+    {
+        ak_error_message( ak_error_get_value(), __func__, "incorrect sha3_224 testing" );
+        return ak_false;
+    }
+    /* тестируем функцию SHA3-256 */
+    if( ak_hash_test_sha3_256() != ak_true )
+    {
+        ak_error_message( ak_error_get_value(), __func__, "incorrect sha3_256 testing" );
+        return ak_false;
+    }
+    /* тестируем функцию SHA3-384 */
+    if( ak_hash_test_sha3_384() != ak_true )
+    {
+        ak_error_message( ak_error_get_value(), __func__, "incorrect sha3_384 testing" );
+        return ak_false;
+    }
+    /* тестируем функцию SHA3-512 */
+    if( ak_hash_test_sha3_512() != ak_true )
+    {
+        ak_error_message( ak_error_get_value(), __func__, "incorrect sha3_512 testing" );
+        return ak_false;
+    }
+    /* тестируем функцию SHAKE128 */
+    if( ak_hash_test_shake128() != ak_true )
+    {
+        ak_error_message( ak_error_get_value(), __func__, "incorrect shake128 testing" );
+        return ak_false;
+    }
+    /* тестируем функцию SHAKE256 */
+    if( ak_hash_test_shake256() != ak_true )
+    {
+        ak_error_message( ak_error_get_value(), __func__, "incorrect shake256 testing" );
+        return ak_false;
+    }
+
   if( audit >= ak_log_maximum )
    ak_error_message( ak_error_ok, __func__ , "testing hash functions ended successfully" );
 

@@ -76,6 +76,35 @@
                                         ( ak_function_void *) ak_hash_context_destroy,
                                         ( ak_function_void *) ak_hash_context_delete, NULL, NULL }},
 
+    /*  идентификаторы алгоритмов бесключевого хеширования SHA3,
+    *   значения OID взяты из http://oid-info.com/get/2.16.840.1.101.3.4.2
+    */
+   { hash_function, algorithm, "sha3_224", "2.16.840.1.101.3.4.2.7", NULL, NULL,
+     { ( ak_function_void *) ak_hash_create_sha3_224,
+       ( ak_function_void *) ak_hash_context_destroy,
+       ( ak_function_void *) ak_hash_context_delete, NULL, NULL }},
+   { hash_function, algorithm, "sha3_256", "2.16.840.1.101.3.4.2.8", NULL, NULL,
+     { ( ak_function_void *) ak_hash_create_sha3_256,
+       ( ak_function_void *) ak_hash_context_destroy,
+       ( ak_function_void *) ak_hash_context_delete, NULL, NULL }},
+   { hash_function, algorithm, "sha3_384", "2.16.840.1.101.3.4.2.9", NULL, NULL,
+     { ( ak_function_void *) ak_hash_create_sha3_384,
+       ( ak_function_void *) ak_hash_context_destroy,
+       ( ak_function_void *) ak_hash_context_delete, NULL, NULL }},
+   { hash_function, algorithm, "sha3_512", "2.16.840.1.101.3.4.2.10", NULL, NULL,
+     { ( ak_function_void *) ak_hash_create_sha3_512,
+       ( ak_function_void *) ak_hash_context_destroy,
+       ( ak_function_void *) ak_hash_context_delete, NULL, NULL }},
+   { hash_function, algorithm, "shake128", "2.16.840.1.101.3.4.2.11", NULL, NULL,
+     { ( ak_function_void *) ak_hash_create_shake128,
+       ( ak_function_void *) ak_hash_context_destroy,
+       ( ak_function_void *) ak_hash_context_delete, NULL, NULL }},
+   { hash_function, algorithm, "shake256", "2.16.840.1.101.3.4.2.12", NULL, NULL,
+     { ( ak_function_void *) ak_hash_create_shake256,
+       ( ak_function_void *) ak_hash_context_destroy,
+       ( ak_function_void *) ak_hash_context_delete, NULL, NULL }},
+
+
   /* 3. идентификаторы параметров алгоритма бесключевого хеширования ГОСТ Р 34.11-94.
         значения OID взяты из перечней КриптоПро
 
@@ -208,6 +237,7 @@
    { identifier, wcurve_params, "id-tc26-gost-3410-2012-512-paramSetC", "1.2.643.7.1.2.1.2.3",
                                      NULL, (ak_pointer) &id_tc26_gost_3410_2012_512_paramSetC,
                                                                   { NULL, NULL, NULL, NULL, NULL }},
+
 
  /* завершающая константа, должна всегда принимать неопределенные и нулевые значения */
   { undefined_engine, undefined_mode, NULL, NULL, NULL, NULL, { NULL, NULL, NULL, NULL, NULL }}

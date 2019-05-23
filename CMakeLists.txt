@@ -102,6 +102,7 @@ if( LIBAKRYPT_CRYPTO_FUNCTIONS )
   set( SOURCES      ${SOURCES}
                     source/ak_hash.c
                     source/ak_streebog.c
+                    source/ak_hash-sha-3.c
                     source/ak_hashrnd.c
                     source/ak_skey.c
                     source/ak_hmac.c
@@ -271,6 +272,7 @@ endif()
 set( EXAMPLES_LIST hello
                    log
                    buffer
+                   hash-sha-3
 )
 
 # организуем сборку примеров со статической линковкой

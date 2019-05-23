@@ -354,6 +354,18 @@ extern "C" {
  dll_export ak_handle ak_hash_new_streebog256( const char * );
 /*! \brief Создание дескриптора бесключевой функции хеширования Стрибог512. */
  dll_export ak_handle ak_hash_new_streebog512( const char * );
+/*! \brief Создание дескриптора функции хеширования SHA3-224. */
+dll_export ak_handle ak_hash_new_sha3_224( const char * );
+/*! \brief Создание дескриптора функции хеширования SHA3-256. */
+dll_export ak_handle ak_hash_new_sha3_256( const char * );
+/*! \brief Создание дескриптора функции хеширования SHA3-384. */
+dll_export ak_handle ak_hash_new_sha3_384( const char * );
+/*! \brief Создание дескриптора функции хеширования SHA3-512. */
+dll_export ak_handle ak_hash_new_sha3_512( const char * );
+/*! \brief Создание дескриптора функции хеширования SHAKE128. */
+dll_export ak_handle ak_hash_new_shake128( const char * );
+/*! \brief Создание дескриптора функции хеширования SHAKE256. */
+dll_export ak_handle ak_hash_new_shake256( const char * );
 /*! \brief Создание дескриптора бесключевой функции хеширования. */
  dll_export ak_handle ak_hash_new_oid_ni( const char *, const char * );
 /*! \brief Получение длины хэш-кода (в байтах). */

@@ -77,6 +77,18 @@
  int ak_hash_context_create_streebog256( ak_hash );
 /*! \brief Инициализация контекста функции бесключевого хеширования ГОСТ Р 34.11-2012 (Стрибог512). */
  int ak_hash_context_create_streebog512( ak_hash );
+/*! \brief Инициализация контекста функции бесключевого хеширования SHA3-224 . */
+ int ak_hash_create_sha3_224( ak_hash );
+/*! \brief Инициализация контекста функции бесключевого хеширования SHA3-256 . */
+ int ak_hash_create_sha3_256( ak_hash );
+/*! \brief Инициализация контекста функции бесключевого хеширования SHA3-384 . */
+ int ak_hash_create_sha3_384( ak_hash );
+/*! \brief Инициализация контекста функции бесключевого хеширования SHA3-512 . */
+ int ak_hash_create_sha3_512( ak_hash );
+/*! \brief Инициализация контекста функции бесключевого хеширования SHAKE128 . */
+ int ak_hash_create_shake128( ak_hash );
+/*! \brief Инициализация контекста функции бесключевого хеширования SHAKE256 . */
+ int ak_hash_create_shake256( ak_hash );
 /*! \brief Инициализация контекста функции бесключевого хеширования по заданному OID алгоритма. */
  int ak_hash_context_create_oid( ak_hash, ak_oid );
 /*! \brief Хеширование заданной области памяти. */
@@ -89,6 +101,18 @@
  bool_t ak_hash_test_streebog256( void );
 /*! \brief Проверка корректной работы функции хеширования Стрибог-512 */
  bool_t ak_hash_test_streebog512( void );
+/*! \brief Проверка корректной работы функции хеширования SHA3-224 */
+ bool_t ak_hash_test_sha3_224( void );
+/*! \brief Проверка корректной работы функции хеширования SHA3-256 */
+ bool_t ak_hash_test_sha3_256( void );
+/*! \brief Проверка корректной работы функции хеширования SHA3-384 */
+ bool_t ak_hash_test_sha3_384( void );
+/*! \brief Проверка корректной работы функции хеширования SHA3-512 */
+ bool_t ak_hash_test_sha3_512( void );
+/*! \brief Проверка корректной работы функции хеширования SHAKE128 */
+ bool_t ak_hash_test_shake128( void );
+/*! \brief Проверка корректной работы функции хеширования SHAKE256 */
+ bool_t ak_hash_test_shake256( void );
 
 #endif
 /* ----------------------------------------------------------------------------------------------- */
