@@ -154,6 +154,8 @@ extern "C" {
  #define ak_error_overflow                     (-7)
 /*! \brief Попытка доступа к неопределенной опции библиотеки. */
  #define ak_error_wrong_option                 (-8)
+/*! \brief Ошибка использования неправильного значения. */
+#define ak_error_invalid_value                 (-9)
 
 /*! \brief Ошибка создания файла. */
  #define ak_error_create_file                 (-10)
@@ -250,6 +252,15 @@ extern "C" {
  #define ak_error_wrong_asn1_encode           (-90)
 /*! \brief Ошибка, возникающая при декодировании ASN1 структуры (перевод из DER-кодировки в ASN1 структуру). */
  #define ak_error_wrong_asn1_decode           (-91)
+/*! \brief Ошибка, возникающая при сравнивании двух тегов */
+#define ak_error_diff_tags                    (-92)
+
+/*! \brief Ошибка, возникающая при декодировании PKCS 15 контейнера. */
+#define ak_error_invalid_token                (-100)
+
+/*! \brief Ошибка, возникающая при попытке совершения запрещенного действия с сервером в текущем режиме. */
+#define ak_error_wrong_ps_mode                (-110)
+
 
 /* ----------------------------------------------------------------------------------------------- */
  #define ak_null_string                  ("(null)")

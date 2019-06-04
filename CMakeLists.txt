@@ -38,6 +38,7 @@ option( LIBAKRYPT_NETWORK "Build library with network communications support" OF
 option( LIBAKRYPT_FIOT "Build library with FIOT protocol support" OFF )
 option( LIBAKRYPT_TLS_13 "Build library with TLS 1.3 protocol support" OFF )
 option( LIBAKRYPT_AKRYPT "Build console akrypt application" OFF )
+option( LIBAKRYPT_PKCS_15_CONTAINER "Build library with PKCS#15 container generating and parsing functions" ON )
 
 # -------------------------------------------------------------------------------------------------- #
 if( LIBAKRYPT_FIOT )
@@ -162,6 +163,30 @@ if( LIBAKRYPT_FIOT )
                     source/ak_fiot_kgp.c
   )
   add_compile_options( -DLIBAKRYPT_FIOT=ON )
+endif()
+
+# -------------------------------------------------------------------------------------------------- #
+if( LIBAKRYPT_PKCS_15_CONTAINER )
+  set( HEADERS      ${HEADERS}
+          source/pkcs_15_cryptographic_token/ak_asn_codec.h
+          source/pkcs_15_cryptographic_token/kc_includes.h
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_token_manager.h
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_algs_prms.h
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_common_types.h
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_token.h
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_gost_secret_key.h
+          source/pkcs_15_cryptographic_token/ak_pointer_server.h
+          )
+  set( SOURCES      ${SOURCES}
+          source/pkcs_15_cryptographic_token/ak_asn_read.c
+          source/pkcs_15_cryptographic_token/ak_asn_write.c
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_token_manager.c
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_common_types.c
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_token.c
+          source/pkcs_15_cryptographic_token/ak_pkcs_15_gost_secret_key.c
+          source/pkcs_15_cryptographic_token/ak_pointer_server.c
+          )
+  add_compile_options( -DLIBAKRYPT_PKCS_15_CONTAINER=ON )
 endif()
 
 # -------------------------------------------------------------------------------------------------- #
@@ -341,6 +366,12 @@ if( LIBAKRYPT_FIOT )
                  internal-fiot-echo-server
     )
   endif()
+endif()
+
+if( LIBAKRYPT_PKCS_15_CONTAINER )
+  set( INTERNAL_TEST_LIST ${INTERNAL_TEST_LIST}
+          internal-pkcs-15-container
+          )
 endif()
 
 # -------------------------------------------------------------------------------------------------- #
