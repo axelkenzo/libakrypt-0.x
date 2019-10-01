@@ -22,10 +22,11 @@
  #include <ak_parameters.h>
 
 /* ---------------------------------------------------------------------------------------------- */
+ typedef ak_uint64 ak_kuznechik_lookup_matrix[16][256][2];
 /*! \brief Таблицы, используемые для реализации алгоритма зашифрования одного блока. */
- static ak_uint64 ak_kuznechik_encryption_matrix[16][256][2];
+ static ak_kuznechik_lookup_matrix ak_kuznechik_encryption_matrix;
 /*! \brief Таблицы, используемые для реализации алгоритма расшифрования одного блока. */
- static ak_uint64 ak_kuznechik_decryption_matrix[16][256][2];
+ static ak_kuznechik_lookup_matrix ak_kuznechik_decryption_matrix;
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Развернутые раундовые ключи и маски алгоритма Кузнечик.
@@ -107,6 +108,19 @@
   }
 }
 
+struct ak_kuznechik_key_data {
+  ak_uint64 ekey[2][20];
+  ak_uint64 dkey[2][20];
+  ak_uint64 mkey[2][20];
+  ak_uint64 xkey[2][20];
+
+  ak_kuznechik_lookup_matrix masked_encryption_matrix;
+  ak_kuznechik_lookup_matrix masked_decryption_matrix;
+
+  ak_kuznechik_lookup_matrix* encryption_matrices[2];
+  ak_kuznechik_lookup_matrix* decryption_matrices[2];
+};
+
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция освобождает память, занимаемую развернутыми ключами алгоритма Кузнечик.
     \param skey Указатель на контекст секретного ключа, содержащего развернутые
@@ -123,16 +137,46 @@
                                                  __func__ , "using a null pointer to secret key" );
   if( skey->data != NULL ) {
    /* теперь очистка и освобождение памяти */
-    if(( error = ak_ptr_wipe( skey->data, sizeof( ak_kuznechik_expanded_keys ),
+    if(( error = ak_ptr_wipe( skey->data, sizeof( struct ak_kuznechik_key_data ),
                                                   &skey->generator, ak_true )) != ak_error_ok ) {
       ak_error_message( error, __func__, "incorrect wiping an internal data" );
-      memset( skey->data, 0, sizeof( ak_kuznechik_expanded_keys ));
+      memset( skey->data, 0, sizeof( struct ak_kuznechik_key_data ));
     }
     free( skey->data );
     skey->data = NULL;
   }
  return error;
 }
+
+ static int ak_kuznechik_init_masked_key (ak_skey skey) {
+   struct ak_kuznechik_key_data* data_ptr = skey->data;
+   ak_uint64 delta[2], delta_inv[2];
+   skey->generator.random(&skey->generator, delta, sizeof(ak_uint64) * 2);
+   ak_kuznechik_matrix_mul_vector(Linv, (ak_uint8*) delta, (ak_uint8*) delta_inv);
+   for (int i = 0; i < 20; ++i) {
+     data_ptr->ekey[1][i] = data_ptr->ekey[0][i] ^ data_ptr->mkey[0][i] ^ data_ptr->mkey[1][i] ^ delta[i % 2];
+     data_ptr->dkey[1][i] = data_ptr->dkey[0][i] ^ data_ptr->xkey[0][i] ^ data_ptr->xkey[1][i] ^ delta_inv[i % 2];
+   }
+   for(unsigned i = 0; i < 16; i++ ) {
+     for(unsigned j = 0; j < 256; j++ ) {
+       ak_uint8 b[16], ib[16], *delta_bytes = (ak_uint8 *) delta;
+       for(unsigned l = 0; l < 16; l++ ) {
+         b[l] = ak_kuznechik_mul_gf256( L[l][i], gost_pi[j^delta_bytes[i]] );
+         ib[l] = ak_kuznechik_mul_gf256( Linv[l][i], gost_pinv[j] ^ delta_bytes[i] );
+       }
+       memcpy( data_ptr->masked_encryption_matrix[i][j], b, 16 );
+       memcpy( data_ptr->masked_decryption_matrix[i][j], ib, 16 );
+     }
+   }
+
+   data_ptr->encryption_matrices[0] = &ak_kuznechik_encryption_matrix;
+   data_ptr->encryption_matrices[1] = &data_ptr->masked_encryption_matrix;
+
+   data_ptr->decryption_matrices[0] = &ak_kuznechik_decryption_matrix;
+   data_ptr->decryption_matrices[1] = &data_ptr->masked_decryption_matrix;
+   return 0;
+ }
+
 
 /* ----------------------------------------------------------------------------------------------- */
 /*! \brief Функция реализует развертку ключей для алгоритма Кузнечик.
@@ -146,6 +190,7 @@
   int i = 0, j = 0, l = 0, kdx = 2;
   ak_uint64 a0[2], a1[2], c[2], t[2], idx = 0;
   ak_uint64 *ekey = NULL, *mkey = NULL, *dkey = NULL, *xkey = NULL;
+  struct ak_kuznechik_key_data* data_ptr;
 
  /* выполняем стандартные проверки */
   if( skey == NULL ) return ak_error_message( ak_error_null_pointer, __func__ ,
@@ -157,17 +202,21 @@
   if( skey->data != NULL ) ak_kuznechik_delete_keys( skey );
 
  /* далее, по-возможности, выделяем выравненную память */
-  if(( skey->data = ak_libakrypt_aligned_malloc( sizeof( ak_kuznechik_expanded_keys ))) == NULL )
+  if(( data_ptr = ak_libakrypt_aligned_malloc( sizeof( struct ak_kuznechik_key_data ))) == NULL )
     return ak_error_message( ak_error_out_of_memory, __func__ ,
                                                              "wrong allocation of internal data" );
+  skey->data = data_ptr;
  /* получаем указатели на области памяти */
-  ekey = ( ak_uint64 *)skey->data;                  /* 10 прямых раундовых ключей */
-  dkey = ( ak_uint64 *)skey->data + 20;           /* 10 обратных раундовых ключей */
-  mkey = ( ak_uint64 *)skey->data + 40;   /* 10 масок для прямых раундовых ключей */
-  xkey = ( ak_uint64 *)skey->data + 60; /* 10 масок для обратных раундовых ключей */
+  ekey = data_ptr->ekey[0];             /* 10 прямых раундовых ключей */
+  dkey = data_ptr->dkey[0];           /* 10 обратных раундовых ключей */
+  mkey = data_ptr->mkey[0];   /* 10 масок для прямых раундовых ключей */
+  xkey = data_ptr->xkey[0]; /* 10 масок для обратных раундовых ключей */
 
  /* за один вызов вырабатываем маски для прямых и обратных ключей */
-  skey->generator.random( &skey->generator, mkey, 40*sizeof( ak_uint64 ));
+  skey->generator.random( &skey->generator, data_ptr->mkey[0], 20*sizeof( ak_uint64 ));
+  skey->generator.random( &skey->generator, data_ptr->mkey[1], 20*sizeof( ak_uint64 ));
+  skey->generator.random( &skey->generator, data_ptr->xkey[0], 20*sizeof( ak_uint64 ));
+  skey->generator.random( &skey->generator, data_ptr->xkey[1], 20*sizeof( ak_uint64 ));
 
  /* только теперь выполняем алгоритм развертки ключа */
   a0[0] = (( ak_uint64 *) skey->key.data )[0] ^ (( ak_uint64 *) skey->mask.data )[0];
@@ -210,6 +259,7 @@
      ak_kuznechik_matrix_mul_vector( Linv, ( ak_uint8 *)a0, (ak_uint8 *)( dkey+kdx ));
      dkey[kdx] ^= xkey[kdx]; dkey[kdx+1] ^= xkey[kdx+1];
   }
+  ak_kuznechik_init_masked_key(skey);
  return ak_error_ok;
 }
 
@@ -220,57 +270,66 @@
  static void ak_kuznechik_encrypt_with_mask( ak_skey skey, ak_pointer in, ak_pointer out )
 {
   int i = 0;
-  ak_uint64 *ekey = ( ak_uint64 *)skey->data;
-  ak_uint64 *mkey = ( ak_uint64 *)skey->data + 40;
-
+  struct ak_kuznechik_key_data* data = (( struct ak_kuznechik_key_data *)skey->data);
  /* чистая реализация для 64х битной архитектуры */
   ak_uint64 s, t, x[2];
   ak_uint8 *b = (ak_uint8 *)x;
 
   x[0] = (( ak_uint64 *) in)[0]; x[1] = (( ak_uint64 *) in)[1];
-  while( i < 18 ) {
-     x[0] ^= ekey[i]; x[0] ^= mkey[i];
-     x[1] ^= ekey[++i]; x[1] ^= mkey[i++];
 
-     t  = ak_kuznechik_encryption_matrix[ 0][b[ 0]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 1][b[ 1]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 2][b[ 2]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 3][b[ 3]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 4][b[ 4]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 5][b[ 5]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 6][b[ 6]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 7][b[ 7]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 8][b[ 8]][0];
-     t ^= ak_kuznechik_encryption_matrix[ 9][b[ 9]][0];
-     t ^= ak_kuznechik_encryption_matrix[10][b[10]][0];
-     t ^= ak_kuznechik_encryption_matrix[11][b[11]][0];
-     t ^= ak_kuznechik_encryption_matrix[12][b[12]][0];
-     t ^= ak_kuznechik_encryption_matrix[13][b[13]][0];
-     t ^= ak_kuznechik_encryption_matrix[14][b[14]][0];
-     t ^= ak_kuznechik_encryption_matrix[15][b[15]][0];
+  ak_uint32 path_val;
+  skey->generator.random(&skey->generator, &path_val, sizeof(ak_uint32));
+  ak_byte path[10];
+  for (int j = 0; j < 10; j++) {
+      path[j] = path_val & 0x0001u;
+      path_val = path_val >> 1u;
+  }
 
-     s  = ak_kuznechik_encryption_matrix[ 0][b[ 0]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 1][b[ 1]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 2][b[ 2]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 3][b[ 3]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 4][b[ 4]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 5][b[ 5]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 6][b[ 6]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 7][b[ 7]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 8][b[ 8]][1];
-     s ^= ak_kuznechik_encryption_matrix[ 9][b[ 9]][1];
-     s ^= ak_kuznechik_encryption_matrix[10][b[10]][1];
-     s ^= ak_kuznechik_encryption_matrix[11][b[11]][1];
-     s ^= ak_kuznechik_encryption_matrix[12][b[12]][1];
-     s ^= ak_kuznechik_encryption_matrix[13][b[13]][1];
-     s ^= ak_kuznechik_encryption_matrix[14][b[14]][1];
-     s ^= ak_kuznechik_encryption_matrix[15][b[15]][1];
+  for(i = 0; i < 9; i++) {
+     ak_byte m = path[i];
+
+     x[0] ^= data->ekey[m][2*i    ]; x[0] ^= data->mkey[m][2*i    ];
+     x[1] ^= data->ekey[m][2*i + 1]; x[1] ^= data->mkey[m][2*i + 1];
+
+     t  = (*data->encryption_matrices[m])[ 0][b[ 0]][0];
+     t ^= (*data->encryption_matrices[m])[ 1][b[ 1]][0];
+     t ^= (*data->encryption_matrices[m])[ 2][b[ 2]][0];
+     t ^= (*data->encryption_matrices[m])[ 3][b[ 3]][0];
+     t ^= (*data->encryption_matrices[m])[ 4][b[ 4]][0];
+     t ^= (*data->encryption_matrices[m])[ 5][b[ 5]][0];
+     t ^= (*data->encryption_matrices[m])[ 6][b[ 6]][0];
+     t ^= (*data->encryption_matrices[m])[ 7][b[ 7]][0];
+     t ^= (*data->encryption_matrices[m])[ 8][b[ 8]][0];
+     t ^= (*data->encryption_matrices[m])[ 9][b[ 9]][0];
+     t ^= (*data->encryption_matrices[m])[10][b[10]][0];
+     t ^= (*data->encryption_matrices[m])[11][b[11]][0];
+     t ^= (*data->encryption_matrices[m])[12][b[12]][0];
+     t ^= (*data->encryption_matrices[m])[13][b[13]][0];
+     t ^= (*data->encryption_matrices[m])[14][b[14]][0];
+     t ^= (*data->encryption_matrices[m])[15][b[15]][0];
+
+     s  = (*data->encryption_matrices[m])[ 0][b[ 0]][1];
+     s ^= (*data->encryption_matrices[m])[ 1][b[ 1]][1];
+     s ^= (*data->encryption_matrices[m])[ 2][b[ 2]][1];
+     s ^= (*data->encryption_matrices[m])[ 3][b[ 3]][1];
+     s ^= (*data->encryption_matrices[m])[ 4][b[ 4]][1];
+     s ^= (*data->encryption_matrices[m])[ 5][b[ 5]][1];
+     s ^= (*data->encryption_matrices[m])[ 6][b[ 6]][1];
+     s ^= (*data->encryption_matrices[m])[ 7][b[ 7]][1];
+     s ^= (*data->encryption_matrices[m])[ 8][b[ 8]][1];
+     s ^= (*data->encryption_matrices[m])[ 9][b[ 9]][1];
+     s ^= (*data->encryption_matrices[m])[10][b[10]][1];
+     s ^= (*data->encryption_matrices[m])[11][b[11]][1];
+     s ^= (*data->encryption_matrices[m])[12][b[12]][1];
+     s ^= (*data->encryption_matrices[m])[13][b[13]][1];
+     s ^= (*data->encryption_matrices[m])[14][b[14]][1];
+     s ^= (*data->encryption_matrices[m])[15][b[15]][1];
 
      x[0] = t; x[1] = s;
   }
-  x[0] ^= ekey[18]; x[1] ^= ekey[19];
-  ((ak_uint64 *)out)[0] = x[0] ^ mkey[18];
-  ((ak_uint64 *)out)[1] = x[1] ^ mkey[19];
+  x[0] ^= data->ekey[0][18]; x[1] ^= data->ekey[0][19];
+  ((ak_uint64 *)out)[0] = x[0] ^ data->mkey[0][18];
+  ((ak_uint64 *)out)[1] = x[1] ^ data->mkey[0][19];
 }
 
 /* ----------------------------------------------------------------------------------------------- */
@@ -280,62 +339,72 @@
  static void ak_kuznechik_decrypt_with_mask( ak_skey skey, ak_pointer in, ak_pointer out )
 {
   int i = 0;
-  ak_uint64 *dkey = ( ak_uint64 *)skey->data + 20;
-  ak_uint64 *xkey = ( ak_uint64 *)skey->data + 60;
+  struct ak_kuznechik_key_data* data = (( struct ak_kuznechik_key_data *)skey->data);
 
- /* чистая реализация для 64х битной архитектуры */
-  ak_uint64 t, s, x[2];
-  ak_uint8 *b = ( ak_uint8 *)x;
+  /* чистая реализация для 64х битной архитектуры */
+  ak_uint64 s, t, x[2];
+  ak_uint8 *b = (ak_uint8 *)x;
+
+  x[0] = (( ak_uint64 *) in)[0]; x[1] = (( ak_uint64 *) in)[1];
+  ak_uint32 path_val;
+  skey->generator.random(&skey->generator, &path_val, sizeof(ak_uint32));
+  ak_byte path[10];
+  for (int j = 0; j < 10; j++) {
+    path[j] = path_val & 0x0001u;
+    path_val = path_val >> 1u;
+  }
+
 
   x[0] = (( ak_uint64 *) in)[0]; x[1] = (( ak_uint64 *) in)[1];
   for( i = 0; i < 16; i++ ) b[i] = gost_pi[b[i]];
 
-  i = 19;
-  while( i > 1 ) {
-     t  = ak_kuznechik_decryption_matrix[ 0][b[ 0]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 1][b[ 1]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 2][b[ 2]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 3][b[ 3]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 4][b[ 4]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 5][b[ 5]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 6][b[ 6]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 7][b[ 7]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 8][b[ 8]][0];
-     t ^= ak_kuznechik_decryption_matrix[ 9][b[ 9]][0];
-     t ^= ak_kuznechik_decryption_matrix[10][b[10]][0];
-     t ^= ak_kuznechik_decryption_matrix[11][b[11]][0];
-     t ^= ak_kuznechik_decryption_matrix[12][b[12]][0];
-     t ^= ak_kuznechik_decryption_matrix[13][b[13]][0];
-     t ^= ak_kuznechik_decryption_matrix[14][b[14]][0];
-     t ^= ak_kuznechik_decryption_matrix[15][b[15]][0];
+  for( i = 9; i > 0; i--) {
+     ak_byte m = path[i];
 
-     s  = ak_kuznechik_decryption_matrix[ 0][b[ 0]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 1][b[ 1]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 2][b[ 2]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 3][b[ 3]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 4][b[ 4]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 5][b[ 5]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 6][b[ 6]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 7][b[ 7]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 8][b[ 8]][1];
-     s ^= ak_kuznechik_decryption_matrix[ 9][b[ 9]][1];
-     s ^= ak_kuznechik_decryption_matrix[10][b[10]][1];
-     s ^= ak_kuznechik_decryption_matrix[11][b[11]][1];
-     s ^= ak_kuznechik_decryption_matrix[12][b[12]][1];
-     s ^= ak_kuznechik_decryption_matrix[13][b[13]][1];
-     s ^= ak_kuznechik_decryption_matrix[14][b[14]][1];
-     s ^= ak_kuznechik_decryption_matrix[15][b[15]][1];
+     t  = (*data->decryption_matrices[m])[ 0][b[ 0]][0];
+     t ^= (*data->decryption_matrices[m])[ 1][b[ 1]][0];
+     t ^= (*data->decryption_matrices[m])[ 2][b[ 2]][0];
+     t ^= (*data->decryption_matrices[m])[ 3][b[ 3]][0];
+     t ^= (*data->decryption_matrices[m])[ 4][b[ 4]][0];
+     t ^= (*data->decryption_matrices[m])[ 5][b[ 5]][0];
+     t ^= (*data->decryption_matrices[m])[ 6][b[ 6]][0];
+     t ^= (*data->decryption_matrices[m])[ 7][b[ 7]][0];
+     t ^= (*data->decryption_matrices[m])[ 8][b[ 8]][0];
+     t ^= (*data->decryption_matrices[m])[ 9][b[ 9]][0];
+     t ^= (*data->decryption_matrices[m])[10][b[10]][0];
+     t ^= (*data->decryption_matrices[m])[11][b[11]][0];
+     t ^= (*data->decryption_matrices[m])[12][b[12]][0];
+     t ^= (*data->decryption_matrices[m])[13][b[13]][0];
+     t ^= (*data->decryption_matrices[m])[14][b[14]][0];
+     t ^= (*data->decryption_matrices[m])[15][b[15]][0];
+
+     s  = (*data->decryption_matrices[m])[ 0][b[ 0]][1];
+     s ^= (*data->decryption_matrices[m])[ 1][b[ 1]][1];
+     s ^= (*data->decryption_matrices[m])[ 2][b[ 2]][1];
+     s ^= (*data->decryption_matrices[m])[ 3][b[ 3]][1];
+     s ^= (*data->decryption_matrices[m])[ 4][b[ 4]][1];
+     s ^= (*data->decryption_matrices[m])[ 5][b[ 5]][1];
+     s ^= (*data->decryption_matrices[m])[ 6][b[ 6]][1];
+     s ^= (*data->decryption_matrices[m])[ 7][b[ 7]][1];
+     s ^= (*data->decryption_matrices[m])[ 8][b[ 8]][1];
+     s ^= (*data->decryption_matrices[m])[ 9][b[ 9]][1];
+     s ^= (*data->decryption_matrices[m])[10][b[10]][1];
+     s ^= (*data->decryption_matrices[m])[11][b[11]][1];
+     s ^= (*data->decryption_matrices[m])[12][b[12]][1];
+     s ^= (*data->decryption_matrices[m])[13][b[13]][1];
+     s ^= (*data->decryption_matrices[m])[14][b[14]][1];
+     s ^= (*data->decryption_matrices[m])[15][b[15]][1];
 
      x[0] = t; x[1] = s;
 
-     x[1] ^= dkey[i]; x[1] ^= xkey[i--];
-     x[0] ^= dkey[i]; x[0] ^= xkey[i--];
+     x[1] ^= data->dkey[m][2*i + 1]; x[1] ^= data->xkey[m][2*i + 1];
+     x[0] ^= data->dkey[m][2*i    ]; x[0] ^= data->xkey[m][2*i    ];
   }
   for( i = 0; i < 16; i++ ) b[i] = gost_pinv[b[i]];
 
-  x[0] ^= dkey[0]; x[1] ^= dkey[1];
-  (( ak_uint64 *) out)[0] = x[0] ^ xkey[0];
-  (( ak_uint64 *) out)[1] = x[1] ^ xkey[1];
+  x[0] ^= data->dkey[0][0]; x[1] ^= data->dkey[0][1];
+  (( ak_uint64 *) out)[0] = x[0] ^ data->xkey[0][0];
+  (( ak_uint64 *) out)[1] = x[1] ^ data->xkey[0][1];
 }
 
 /* ----------------------------------------------------------------------------------------------- */
