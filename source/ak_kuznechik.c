@@ -119,6 +119,9 @@ struct ak_kuznechik_key_data {
 
   ak_kuznechik_lookup_matrix* encryption_matrices[2];
   ak_kuznechik_lookup_matrix* decryption_matrices[2];
+
+  ak_uint64 delta[2];
+  ak_uint64 delta_inv[2];
 };
 
 /* ----------------------------------------------------------------------------------------------- */
@@ -150,19 +153,18 @@ struct ak_kuznechik_key_data {
 
  static int ak_kuznechik_init_masked_key (ak_skey skey) {
    struct ak_kuznechik_key_data* data_ptr = skey->data;
-   ak_uint64 delta[2], delta_inv[2];
-   skey->generator.random(&skey->generator, delta, sizeof(ak_uint64) * 2);
-   ak_kuznechik_matrix_mul_vector(Linv, (ak_uint8*) delta, (ak_uint8*) delta_inv);
+   skey->generator.random(&skey->generator, data_ptr->delta, sizeof(ak_uint64) * 2);
+   ak_kuznechik_matrix_mul_vector(Linv, (ak_uint8*) data_ptr->delta, (ak_uint8*) data_ptr->delta_inv);
    for (int i = 0; i < 20; ++i) {
-     data_ptr->ekey[1][i] = data_ptr->ekey[0][i] ^ data_ptr->mkey[0][i] ^ data_ptr->mkey[1][i] ^ delta[i % 2];
-     data_ptr->dkey[1][i] = data_ptr->dkey[0][i] ^ data_ptr->xkey[0][i] ^ data_ptr->xkey[1][i] ^ delta_inv[i % 2];
+     data_ptr->ekey[1][i] = data_ptr->ekey[0][i] ^ data_ptr->mkey[0][i] ^ data_ptr->mkey[1][i] ^ data_ptr->delta[i % 2];
+     data_ptr->dkey[1][i] = data_ptr->dkey[0][i] ^ data_ptr->xkey[0][i] ^ data_ptr->xkey[1][i] ^ data_ptr->delta_inv[i % 2];
    }
    for(unsigned i = 0; i < 16; i++ ) {
      for(unsigned j = 0; j < 256; j++ ) {
-       ak_uint8 b[16], ib[16], *delta_bytes = (ak_uint8 *) delta;
+       ak_uint8 b[16], ib[16], *delta_bytes = (ak_uint8 *) data_ptr->delta, *delta_inv_bytes = (ak_uint8 *) data_ptr->delta_inv;
        for(unsigned l = 0; l < 16; l++ ) {
-         b[l] = ak_kuznechik_mul_gf256( L[l][i], gost_pi[j^delta_bytes[i]] );
-         ib[l] = ak_kuznechik_mul_gf256( Linv[l][i], gost_pinv[j] ^ delta_bytes[i] );
+         b[l] = ak_kuznechik_mul_gf256( L[l][i], gost_pi[j^delta_bytes[i]]) ^ (delta_bytes[l] * (i == 0 ? 1u : 0u));
+         ib[l] = ak_kuznechik_mul_gf256( Linv[l][i], gost_pinv[j^delta_inv_bytes[i]] ) ^ (delta_inv_bytes[l] * (i == 0 ? 1u : 0u));
        }
        memcpy( data_ptr->masked_encryption_matrix[i][j], b, 16 );
        memcpy( data_ptr->masked_decryption_matrix[i][j], ib, 16 );
@@ -285,51 +287,52 @@ struct ak_kuznechik_key_data {
       path_val = path_val >> 1u;
   }
 
+  ak_byte sum = 0;
   for(i = 0; i < 9; i++) {
      ak_byte m = path[i];
+     sum ^= m;
 
      x[0] ^= data->ekey[m][2*i    ]; x[0] ^= data->mkey[m][2*i    ];
      x[1] ^= data->ekey[m][2*i + 1]; x[1] ^= data->mkey[m][2*i + 1];
 
-     t  = (*data->encryption_matrices[m])[ 0][b[ 0]][0];
-     t ^= (*data->encryption_matrices[m])[ 1][b[ 1]][0];
-     t ^= (*data->encryption_matrices[m])[ 2][b[ 2]][0];
-     t ^= (*data->encryption_matrices[m])[ 3][b[ 3]][0];
-     t ^= (*data->encryption_matrices[m])[ 4][b[ 4]][0];
-     t ^= (*data->encryption_matrices[m])[ 5][b[ 5]][0];
-     t ^= (*data->encryption_matrices[m])[ 6][b[ 6]][0];
-     t ^= (*data->encryption_matrices[m])[ 7][b[ 7]][0];
-     t ^= (*data->encryption_matrices[m])[ 8][b[ 8]][0];
-     t ^= (*data->encryption_matrices[m])[ 9][b[ 9]][0];
-     t ^= (*data->encryption_matrices[m])[10][b[10]][0];
-     t ^= (*data->encryption_matrices[m])[11][b[11]][0];
-     t ^= (*data->encryption_matrices[m])[12][b[12]][0];
-     t ^= (*data->encryption_matrices[m])[13][b[13]][0];
-     t ^= (*data->encryption_matrices[m])[14][b[14]][0];
-     t ^= (*data->encryption_matrices[m])[15][b[15]][0];
+     t  = (*data->encryption_matrices[sum])[ 0][b[ 0]][0];
+     t ^= (*data->encryption_matrices[sum])[ 1][b[ 1]][0];
+     t ^= (*data->encryption_matrices[sum])[ 2][b[ 2]][0];
+     t ^= (*data->encryption_matrices[sum])[ 3][b[ 3]][0];
+     t ^= (*data->encryption_matrices[sum])[ 4][b[ 4]][0];
+     t ^= (*data->encryption_matrices[sum])[ 5][b[ 5]][0];
+     t ^= (*data->encryption_matrices[sum])[ 6][b[ 6]][0];
+     t ^= (*data->encryption_matrices[sum])[ 7][b[ 7]][0];
+     t ^= (*data->encryption_matrices[sum])[ 8][b[ 8]][0];
+     t ^= (*data->encryption_matrices[sum])[ 9][b[ 9]][0];
+     t ^= (*data->encryption_matrices[sum])[10][b[10]][0];
+     t ^= (*data->encryption_matrices[sum])[11][b[11]][0];
+     t ^= (*data->encryption_matrices[sum])[12][b[12]][0];
+     t ^= (*data->encryption_matrices[sum])[13][b[13]][0];
+     t ^= (*data->encryption_matrices[sum])[14][b[14]][0];
+     t ^= (*data->encryption_matrices[sum])[15][b[15]][0];
 
-     s  = (*data->encryption_matrices[m])[ 0][b[ 0]][1];
-     s ^= (*data->encryption_matrices[m])[ 1][b[ 1]][1];
-     s ^= (*data->encryption_matrices[m])[ 2][b[ 2]][1];
-     s ^= (*data->encryption_matrices[m])[ 3][b[ 3]][1];
-     s ^= (*data->encryption_matrices[m])[ 4][b[ 4]][1];
-     s ^= (*data->encryption_matrices[m])[ 5][b[ 5]][1];
-     s ^= (*data->encryption_matrices[m])[ 6][b[ 6]][1];
-     s ^= (*data->encryption_matrices[m])[ 7][b[ 7]][1];
-     s ^= (*data->encryption_matrices[m])[ 8][b[ 8]][1];
-     s ^= (*data->encryption_matrices[m])[ 9][b[ 9]][1];
-     s ^= (*data->encryption_matrices[m])[10][b[10]][1];
-     s ^= (*data->encryption_matrices[m])[11][b[11]][1];
-     s ^= (*data->encryption_matrices[m])[12][b[12]][1];
-     s ^= (*data->encryption_matrices[m])[13][b[13]][1];
-     s ^= (*data->encryption_matrices[m])[14][b[14]][1];
-     s ^= (*data->encryption_matrices[m])[15][b[15]][1];
+     s  = (*data->encryption_matrices[sum])[ 0][b[ 0]][1];
+     s ^= (*data->encryption_matrices[sum])[ 1][b[ 1]][1];
+     s ^= (*data->encryption_matrices[sum])[ 2][b[ 2]][1];
+     s ^= (*data->encryption_matrices[sum])[ 3][b[ 3]][1];
+     s ^= (*data->encryption_matrices[sum])[ 4][b[ 4]][1];
+     s ^= (*data->encryption_matrices[sum])[ 5][b[ 5]][1];
+     s ^= (*data->encryption_matrices[sum])[ 6][b[ 6]][1];
+     s ^= (*data->encryption_matrices[sum])[ 7][b[ 7]][1];
+     s ^= (*data->encryption_matrices[sum])[ 8][b[ 8]][1];
+     s ^= (*data->encryption_matrices[sum])[ 9][b[ 9]][1];
+     s ^= (*data->encryption_matrices[sum])[10][b[10]][1];
+     s ^= (*data->encryption_matrices[sum])[11][b[11]][1];
+     s ^= (*data->encryption_matrices[sum])[12][b[12]][1];
+     s ^= (*data->encryption_matrices[sum])[13][b[13]][1];
+     s ^= (*data->encryption_matrices[sum])[14][b[14]][1];
+     s ^= (*data->encryption_matrices[sum])[15][b[15]][1];
 
      x[0] = t; x[1] = s;
   }
-  x[0] ^= data->ekey[0][18]; x[1] ^= data->ekey[0][19];
-  ((ak_uint64 *)out)[0] = x[0] ^ data->mkey[0][18];
-  ((ak_uint64 *)out)[1] = x[1] ^ data->mkey[0][19];
+  ((ak_uint64 *)out)[0] = x[0] ^ data->ekey[0][18] ^ data->mkey[0][18] ^ (data->delta[0] * sum);
+  ((ak_uint64 *)out)[1] = x[1] ^ data->ekey[0][19] ^ data->mkey[0][19] ^ (data->delta[1] * sum);
 }
 
 /* ----------------------------------------------------------------------------------------------- */
@@ -358,48 +361,53 @@ struct ak_kuznechik_key_data {
   x[0] = (( ak_uint64 *) in)[0]; x[1] = (( ak_uint64 *) in)[1];
   for( i = 0; i < 16; i++ ) b[i] = gost_pi[b[i]];
 
+  ak_byte sum = 0;
   for( i = 9; i > 0; i--) {
      ak_byte m = path[i];
 
-     t  = (*data->decryption_matrices[m])[ 0][b[ 0]][0];
-     t ^= (*data->decryption_matrices[m])[ 1][b[ 1]][0];
-     t ^= (*data->decryption_matrices[m])[ 2][b[ 2]][0];
-     t ^= (*data->decryption_matrices[m])[ 3][b[ 3]][0];
-     t ^= (*data->decryption_matrices[m])[ 4][b[ 4]][0];
-     t ^= (*data->decryption_matrices[m])[ 5][b[ 5]][0];
-     t ^= (*data->decryption_matrices[m])[ 6][b[ 6]][0];
-     t ^= (*data->decryption_matrices[m])[ 7][b[ 7]][0];
-     t ^= (*data->decryption_matrices[m])[ 8][b[ 8]][0];
-     t ^= (*data->decryption_matrices[m])[ 9][b[ 9]][0];
-     t ^= (*data->decryption_matrices[m])[10][b[10]][0];
-     t ^= (*data->decryption_matrices[m])[11][b[11]][0];
-     t ^= (*data->decryption_matrices[m])[12][b[12]][0];
-     t ^= (*data->decryption_matrices[m])[13][b[13]][0];
-     t ^= (*data->decryption_matrices[m])[14][b[14]][0];
-     t ^= (*data->decryption_matrices[m])[15][b[15]][0];
+     t  = (*data->decryption_matrices[sum])[ 0][b[ 0]][0];
+     t ^= (*data->decryption_matrices[sum])[ 1][b[ 1]][0];
+     t ^= (*data->decryption_matrices[sum])[ 2][b[ 2]][0];
+     t ^= (*data->decryption_matrices[sum])[ 3][b[ 3]][0];
+     t ^= (*data->decryption_matrices[sum])[ 4][b[ 4]][0];
+     t ^= (*data->decryption_matrices[sum])[ 5][b[ 5]][0];
+     t ^= (*data->decryption_matrices[sum])[ 6][b[ 6]][0];
+     t ^= (*data->decryption_matrices[sum])[ 7][b[ 7]][0];
+     t ^= (*data->decryption_matrices[sum])[ 8][b[ 8]][0];
+     t ^= (*data->decryption_matrices[sum])[ 9][b[ 9]][0];
+     t ^= (*data->decryption_matrices[sum])[10][b[10]][0];
+     t ^= (*data->decryption_matrices[sum])[11][b[11]][0];
+     t ^= (*data->decryption_matrices[sum])[12][b[12]][0];
+     t ^= (*data->decryption_matrices[sum])[13][b[13]][0];
+     t ^= (*data->decryption_matrices[sum])[14][b[14]][0];
+     t ^= (*data->decryption_matrices[sum])[15][b[15]][0];
 
-     s  = (*data->decryption_matrices[m])[ 0][b[ 0]][1];
-     s ^= (*data->decryption_matrices[m])[ 1][b[ 1]][1];
-     s ^= (*data->decryption_matrices[m])[ 2][b[ 2]][1];
-     s ^= (*data->decryption_matrices[m])[ 3][b[ 3]][1];
-     s ^= (*data->decryption_matrices[m])[ 4][b[ 4]][1];
-     s ^= (*data->decryption_matrices[m])[ 5][b[ 5]][1];
-     s ^= (*data->decryption_matrices[m])[ 6][b[ 6]][1];
-     s ^= (*data->decryption_matrices[m])[ 7][b[ 7]][1];
-     s ^= (*data->decryption_matrices[m])[ 8][b[ 8]][1];
-     s ^= (*data->decryption_matrices[m])[ 9][b[ 9]][1];
-     s ^= (*data->decryption_matrices[m])[10][b[10]][1];
-     s ^= (*data->decryption_matrices[m])[11][b[11]][1];
-     s ^= (*data->decryption_matrices[m])[12][b[12]][1];
-     s ^= (*data->decryption_matrices[m])[13][b[13]][1];
-     s ^= (*data->decryption_matrices[m])[14][b[14]][1];
-     s ^= (*data->decryption_matrices[m])[15][b[15]][1];
+     s  = (*data->decryption_matrices[sum])[ 0][b[ 0]][1];
+     s ^= (*data->decryption_matrices[sum])[ 1][b[ 1]][1];
+     s ^= (*data->decryption_matrices[sum])[ 2][b[ 2]][1];
+     s ^= (*data->decryption_matrices[sum])[ 3][b[ 3]][1];
+     s ^= (*data->decryption_matrices[sum])[ 4][b[ 4]][1];
+     s ^= (*data->decryption_matrices[sum])[ 5][b[ 5]][1];
+     s ^= (*data->decryption_matrices[sum])[ 6][b[ 6]][1];
+     s ^= (*data->decryption_matrices[sum])[ 7][b[ 7]][1];
+     s ^= (*data->decryption_matrices[sum])[ 8][b[ 8]][1];
+     s ^= (*data->decryption_matrices[sum])[ 9][b[ 9]][1];
+     s ^= (*data->decryption_matrices[sum])[10][b[10]][1];
+     s ^= (*data->decryption_matrices[sum])[11][b[11]][1];
+     s ^= (*data->decryption_matrices[sum])[12][b[12]][1];
+     s ^= (*data->decryption_matrices[sum])[13][b[13]][1];
+     s ^= (*data->decryption_matrices[sum])[14][b[14]][1];
+     s ^= (*data->decryption_matrices[sum])[15][b[15]][1];
+
+     sum ^= m;
 
      x[0] = t; x[1] = s;
 
      x[1] ^= data->dkey[m][2*i + 1]; x[1] ^= data->xkey[m][2*i + 1];
      x[0] ^= data->dkey[m][2*i    ]; x[0] ^= data->xkey[m][2*i    ];
   }
+  x[0] ^= data->delta_inv[0] * sum;
+  x[1] ^= data->delta_inv[1] * sum;
   for( i = 0; i < 16; i++ ) b[i] = gost_pinv[b[i]];
 
   x[0] ^= data->dkey[0][0]; x[1] ^= data->dkey[0][1];
