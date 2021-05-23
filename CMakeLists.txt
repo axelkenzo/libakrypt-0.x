@@ -64,6 +64,7 @@ set( AKRYPT_SOURCES
    source/ak_random.c
    source/ak_gf2n.c
    source/ak_mpzn.c
+   source/ak_128.c
    source/ak_curves.c
    source/ak_parameters.c
    source/ak_mac.c
@@ -101,7 +102,7 @@ message("-- Used compile flags ${CMAKE_C_FLAGS}")
 if( AK_CONFIG_PATH )
 else()
   if( CMAKE_HOST_UNIX )
-    set( AK_CONFIG_PATH "/etc" )
+    set( AK_CONFIG_PATH "etc" )
   endif()
   if( WIN32 )
     set( AK_CONFIG_PATH "C:\\\\Program Files\\\\Akrypt" )
@@ -115,7 +116,7 @@ message("-- Path for libakrypt.conf is ${AK_CONFIG_PATH}")
 if( AK_CA_PATH )
 else()
   if( CMAKE_HOST_UNIX )
-    set( AK_CA_PATH "/usr/share/ca-certificates/libakrypt" )
+    set( AK_CA_PATH "usr/share/ca-certificates/libakrypt" )
   endif()
   if( WIN32 )
     set( AK_CA_PATH "C:\\\\Program Files\\\\Akrypt\\\\ca-certificates" )
@@ -296,7 +297,8 @@ if( CMAKE_HOST_UNIX )
   else()
     install( FILES ${CMAKE_SOURCE_DIR}/aktool/aktool.1 DESTINATION share/man/ru/man1 )
   endif()
-  install( FILES ${CMAKE_SOURCE_DIR}/cert/ca-libakrypt.crt DESTINATION ${AK_CA_PATH} )
+  # Этого файла сейчас нет в репозитории
+  # install( FILES ${CMAKE_SOURCE_DIR}/cert/ca-libakrypt.crt DESTINATION ${AK_CA_PATH} )
 
 # деинсталляция
 # sudo xargs rm < install_manifest.txt

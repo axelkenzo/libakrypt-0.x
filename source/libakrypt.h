@@ -1027,10 +1027,13 @@ extern "C" {
 #endif
 
 /* ----------------------------------------------------------------------------------------------- */
+ #define ak_mpzn128_size     (2)
  #define ak_mpzn256_size     (4)
  #define ak_mpzn512_size     (8)
  #define ak_mpznmax_size    (18)
 
+ #define ak_mpzn128_zero  { 0, 0 }
+ #define ak_mpzn128_one   { 1, 0 }
  #define ak_mpzn256_zero  { 0, 0, 0, 0 }
  #define ak_mpzn256_one   { 1, 0, 0, 0 }
  #define ak_mpzn512_zero  { 0, 0, 0, 0, 0, 0, 0, 0 }
@@ -1039,6 +1042,8 @@ extern "C" {
  #define ak_mpznmax_one   { 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0 }
 
 /* ----------------------------------------------------------------------------------------------- */
+/*! \brief Элемент кольца вычетов по модулю \f$2^{128}\f$. */
+ typedef ak_uint64 ak_mpzn128[ ak_mpzn128_size ];
 /*! \brief Элемент кольца вычетов по модулю \f$2^{256}\f$. */
  typedef ak_uint64 ak_mpzn256[ ak_mpzn256_size ];
 /*! \brief Элемент кольца вычетов по модулю \f$2^{512}\f$. */
@@ -1058,7 +1063,7 @@ extern "C" {
 /*! \brief Присвоение вычету значения, записанного строкой шестнадцатеричных символов. */
  dll_export int ak_mpzn_set_hexstr( ak_uint64 *, const size_t , const char * );
 /*! \brief Преобразование вычета в строку шестнадцатеричных символов. */
- dll_export const char *ak_mpzn_to_hexstr( ak_uint64 *, const size_t );
+ dll_export const char *ak_mpzn_to_hexstr( const ak_uint64 *, const size_t );
 /*! \brief Преобразование вычета в строку шестнадцатеричных символов с выделением памяти. */
  dll_export char *ak_mpzn_to_hexstr_alloc( ak_uint64 *, const size_t );
 /*! \brief Сериализация вычета в последовательность октетов. */
@@ -1098,6 +1103,82 @@ extern "C" {
  dll_export void ak_mpzn_modpow_montgomery( ak_uint64 *, ak_uint64 *, ak_uint64 *,
                                                            ak_uint64 *, ak_uint64, const size_t );
 /* ----------------------------------------------------------------------------------------------- */
+/*! \brief Проверка на равенство двух 128-битных чисел. */
+ dll_export int ak_128_equal( const ak_uint64 *x, const ak_uint64 *y );
+/*! \brief Сравнение 128-битного числа с нулем. */
+ dll_export int ak_128_is_zero( const ak_uint64 *x );
+/*! \brief Сравнение 128-битного числа с единицей. */
+ dll_export int ak_128_is_one( const ak_uint64 *x );
+/*! \brief Присвоение нуля 128-битному числу. */
+ dll_export void ak_128_set_zero( ak_uint64 *x );
+/*! \brief Присвоение единицы 128-битному числу. */
+ dll_export void ak_128_set_one( ak_uint64 *x );
+/*! \brief Сложение двух 128-битных чисел с возвратом знака переноса. */
+ dll_export ak_uint64 ak_128_add( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y );
+/*! \brief Сложение двух 128-битных вычетов по заданному 128-битному модулю. */
+ dll_export void ak_128_add_mod( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y, const ak_uint64 *p );
+/*! \brief Вычитание двух 128-битных чисел с возвратом знака переноса. */
+ dll_export ak_uint64 ak_128_sub( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y );
+/*! \brief Вычитание двух 128-битных вычетов по заданному 128-битному модулю. */
+ dll_export void ak_128_sub_mod( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y, const ak_uint64 *p );
+/*! \brief Умножение двух 128-битных чисел. */
+ dll_export void ak_128_mul( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y );
+/*! \brief Умножение двух 128-битных вычетов по заданному 128-битному модулю. */
+ dll_export void ak_128_mul_mod( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y, const ak_uint64 *p );
+/*! \brief Получение остатка от деления 256-битного числа на заданный 128-битный модуль. */
+ dll_export void ak_128_rem( ak_uint64 *r, const ak_uint64 *u, const ak_uint64 *p );
+/*! \brief Получение частного и остатка от деления 256-битного числа на заданный 128-битный модуль. */
+ dll_export ak_uint64 ak_128_div( ak_uint64 *q, ak_uint64 *r, const ak_uint64 *u, const ak_uint64 *p );
+/*! \brief Получение обратного вычета по заданному 128-битному модулю. */
+ dll_export void ak_128_inverse( ak_uint64 *o, const ak_uint64 *x, const ak_uint64 *p );
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Класс, предназначенный для хранения данных, необходимых для операций Монтгомери */
+/* ----------------------------------------------------------------------------------------------- */
+ struct ak_montgomery_context_128
+{
+/*! \brief Модуль, по которому производятся вычисления */
+ ak_uint64 p[ak_mpzn128_size];
+/*! \brief Значение 2^128 по модулю p */
+ ak_uint64 r[ak_mpzn128_size];
+/*! \brief Значение 2^256 по модулю p */
+ ak_uint64 r2[ak_mpzn128_size];
+/*! \brief Число, удовлетворяющее соотношению ru − pv = 1, где r = 2^128 */
+ ak_uint64 v[ak_mpzn128_size];
+};
+ typedef struct ak_montgomery_context_128 ak_montgomery_context_128;
+
+/*! \brief Инициализация данных, необходимых для операций Монтгомери. */
+ dll_export void ak_128_montgomery_init( ak_montgomery_context_128 *ctx );
+/*! \brief Сложение двух вычетов в представлении Монтгомери. */
+ dll_export void ak_128_montgomery_add( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y, const ak_montgomery_context_128 *ctx );
+/*! \brief Умножение двух вычетов в представлении Монтгомери. */
+ dll_export void ak_128_montgomery_mul( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *y, const ak_montgomery_context_128 *ctx );
+/*! \brief Поиск вычета, обратного данному в представлении Монтгомери. */
+ dll_export void ak_128_montgomery_inverse( ak_uint64 *z, const ak_uint64 *x, const ak_montgomery_context_128 *ctx );
+/*! \brief Возведение одного вычета в степень другого в представлении Монтгомери. */
+ dll_export void ak_128_montgomery_modpow( ak_uint64 *z, const ak_uint64 *x, const ak_uint64 *k, const ak_montgomery_context_128 *ctx );
+/*! \brief Приведение вычета из прямого представления к форме Монтгомери. */
+ dll_export void ak_128_to_montgomery( ak_uint64 *z, const ak_uint64 *x, const ak_montgomery_context_128 *ctx );
+/*! \brief Приведение вычета из формы Монтгомери к прямому представлению */
+ dll_export void ak_128_from_montgomery( ak_uint64 *z, const ak_uint64 *x, const ak_montgomery_context_128 *ctx );
+
+/* ----------------------------------------------------------------------------------------------- */
+/*! \brief Класс, реализующий точку эллиптической кривой с 128-битными афинными координатами. */
+/* ----------------------------------------------------------------------------------------------- */
+ struct point128
+{
+/*! \brief x-координата точки эллиптической кривой */
+ ak_uint64 x[ak_mpzn128_size];
+/*! \brief y-координата точки эллиптической кривой */
+ ak_uint64 y[ak_mpzn128_size];
+};
+ typedef struct point128 *ak_point128;
+
+
+/*! \brief Сложение двух точек на эллиптической кривой по заданному 128-битному модулю. */
+ dll_export void ak_128_point_add( ak_point128 c, const ak_point128 a, const ak_point128 b, const ak_uint64 *p );
+
 #ifdef AK_HAVE_GMP_H
 /*! \brief Преобразование ak_mpznxxx в mpz_t. */
  dll_export void ak_mpzn_to_mpz( const ak_uint64 *, const size_t , mpz_t );
